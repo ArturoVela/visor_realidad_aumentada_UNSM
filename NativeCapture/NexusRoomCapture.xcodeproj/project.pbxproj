@@ -1,0 +1,284 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A0000000000000000000000A /* LabImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000B /* LabImport.swift */; };
+		A0000000000000000000000B /* TopologyInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000C /* TopologyInspector.swift */; };
+		A00000000000000000000009 /* LabTopology.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000A /* LabTopology.swift */; };
+		A00000000000000000000001 /* NexusRoomCaptureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* NexusRoomCaptureApp.swift */; };
+		A00000000000000000000002 /* CaptureController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002 /* CaptureController.swift */; };
+		A00000000000000000000003 /* RoomStructure.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000003 /* RoomStructure.swift */; };
+		A00000000000000000000004 /* RoomPlanExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* RoomPlanExport.swift */; };
+		A00000000000000000000005 /* LabLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006 /* LabLayout.swift */; };
+		A00000000000000000000006 /* LabScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000007 /* LabScene.swift */; };
+		A00000000000000000000007 /* HardwareCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008 /* HardwareCatalog.swift */; };
+		A00000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B0000000000000000000000B /* LabImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabImport.swift; sourceTree = "<group>"; };
+		B0000000000000000000000C /* TopologyInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopologyInspector.swift; sourceTree = "<group>"; };
+		B0000000000000000000000A /* LabTopology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabTopology.swift; sourceTree = "<group>"; };
+		B00000000000000000000001 /* NexusRoomCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NexusRoomCaptureApp.swift; sourceTree = "<group>"; };
+		B00000000000000000000002 /* CaptureController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureController.swift; sourceTree = "<group>"; };
+		B00000000000000000000003 /* RoomStructure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomStructure.swift; sourceTree = "<group>"; };
+		B00000000000000000000004 /* RoomPlanExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPlanExport.swift; sourceTree = "<group>"; };
+		B00000000000000000000005 /* NexusRoomCapture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NexusRoomCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000006 /* LabLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabLayout.swift; sourceTree = "<group>"; };
+		B00000000000000000000007 /* LabScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabScene.swift; sourceTree = "<group>"; };
+		B00000000000000000000008 /* HardwareCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardwareCatalog.swift; sourceTree = "<group>"; };
+		B00000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E00000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000002 /* Sources */,
+				C00000000000000000000003 /* Products */,
+				B00000000000000000000009 /* Assets.xcassets */,
+			);
+			sourceTree = "<group>";
+		};
+		C00000000000000000000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000001 /* NexusRoomCaptureApp.swift */,
+				B00000000000000000000002 /* CaptureController.swift */,
+				B00000000000000000000003 /* RoomStructure.swift */,
+				B00000000000000000000004 /* RoomPlanExport.swift */,
+				B00000000000000000000008 /* HardwareCatalog.swift */,
+				B00000000000000000000007 /* LabScene.swift */,
+				B0000000000000000000000A /* LabTopology.swift */,
+				B0000000000000000000000B /* LabImport.swift */,
+				B0000000000000000000000C /* TopologyInspector.swift */,
+				B00000000000000000000006 /* LabLayout.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000005 /* NexusRoomCapture.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D00000000000000000000001 /* NexusRoomCapture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F00000000000000000000002 /* Build configuration list for PBXNativeTarget "NexusRoomCapture" */;
+			buildPhases = (
+				E00000000000000000000001 /* Sources */,
+				E00000000000000000000002 /* Frameworks */,
+				E00000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NexusRoomCapture;
+			productName = NexusRoomCapture;
+			productReference = B00000000000000000000005 /* NexusRoomCapture.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D00000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2720;
+				LastUpgradeCheck = 2720;
+				TargetAttributes = {
+					D00000000000000000000001 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+				};
+			};
+			buildConfigurationList = F00000000000000000000001 /* Build configuration list for PBXProject "NexusRoomCapture" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = es;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				es,
+				en,
+				Base,
+			);
+			mainGroup = C00000000000000000000001;
+			productRefGroup = C00000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D00000000000000000000001 /* NexusRoomCapture */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E00000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000008 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E00000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000001 /* NexusRoomCaptureApp.swift in Sources */,
+				A00000000000000000000002 /* CaptureController.swift in Sources */,
+				A00000000000000000000003 /* RoomStructure.swift in Sources */,
+				A00000000000000000000004 /* RoomPlanExport.swift in Sources */,
+				A00000000000000000000007 /* HardwareCatalog.swift in Sources */,
+				A00000000000000000000006 /* LabScene.swift in Sources */,
+				A00000000000000000000009 /* LabTopology.swift in Sources */,
+				A0000000000000000000000A /* LabImport.swift in Sources */,
+				A0000000000000000000000B /* TopologyInspector.swift in Sources */,
+				A00000000000000000000005 /* LabLayout.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F00000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F00000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		F00000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = WZR5GWH3X4;
+				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
+				INFOPLIST_KEY_NSCameraUsageDescription = "La cámara y LiDAR permiten medir la estructura del cuarto para crear su laboratorio virtual.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.unsm.NexusRoomCapture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F00000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = WZR5GWH3X4;
+				GENERATE_INFOPLIST_FILE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
+				INFOPLIST_KEY_NSCameraUsageDescription = "La cámara y LiDAR permiten medir la estructura del cuarto para crear su laboratorio virtual.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.unsm.NexusRoomCapture;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F00000000000000000000001 /* Build configuration list for PBXProject "NexusRoomCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000000000000000000003 /* Debug */,
+				F00000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F00000000000000000000002 /* Build configuration list for PBXNativeTarget "NexusRoomCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000000000000000000005 /* Debug */,
+				F00000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D00000000000000000000002 /* Project object */;
+}

@@ -1,0 +1,251 @@
+<p align="center">
+  <img src="NativeCapture/Assets.xcassets/AppIcon.appiconset/AppIcon.png" width="112" alt="Icono de Nexus AR">
+</p>
+
+# CISCO NEXUS AR · UNSM
+
+**Convierte tu cuarto en un laboratorio de redes y explóralo desde el iPhone.**
+
+Proyecto educativo de realidad aumentada: escanea paredes, suelo y accesos con RoomPlan,
+genera una distribución de racks y puestos, e inspecciona equipos y conexiones en 3D o AR.
+También incluye una sala virtual de prueba y un exportador local de topologías de Packet Tracer.
+
+![Versión 0.3.0](https://img.shields.io/badge/versión-0.3.0-blue)
+![iOS 17 o posterior](https://img.shields.io/badge/iOS-17%2B-111827)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138)
+![Unity opcional](https://img.shields.io/badge/Unity-6.6%20opcional-64748b)
+
+[Capturas](#capturas-de-la-aplicación) · [Instalación](#instalación) ·
+[Uso](#cómo-usarlo) · [Pruebas](#comprobaciones-reproducibles) · [Arquitectura](docs/ARCHITECTURE.md)
+
+> Proyecto independiente, no oficial de Cisco. Visualiza hardware y datos de una topología;
+> no ejecuta Cisco IOS, comandos CLI, routing, paquetes ni servicios de red.
+
+## Capturas de la aplicación
+
+Capturas reales de la versión 0.3.0 en simulador iPhone. La sala mostrada es sintética;
+estas imágenes no representan una captura física con LiDAR ni validan AR sobre un dispositivo.
+
+<p align="center">
+  <img src="docs/images/inicio.png" width="310" alt="Pantalla inicial de Nexus AR con acceso al escaneo y al catálogo de equipos">
+  &nbsp;
+  <img src="docs/images/laboratorio-3d.png" width="310" alt="Sala de servidores en 3D: seis racks, dos puestos y conexiones entre equipos">
+</p>
+
+La demo representa una sala de **16 × 12 × 3,5 m**, con **192 m²**, **6 racks**,
+**2 puestos**, **34 equipos**, **44 enlaces** y **5 VLAN**.
+
+## Qué puedes hacer
+
+| Función | Comportamiento |
+| --- | --- |
+| Escanear tu cuarto | Captura estructura, guarda el resultado y distribuye hasta seis racks y dos puestos cuando caben. |
+| Explorar en 3D | Gira, acerca, restablece la cámara y enfoca un equipo al inspeccionarlo. |
+| Usar AR del cuarto | Conserva el origen de la sesión de captura y representa el laboratorio a escala 1:1. |
+| Colocar una maqueta | Demo e importaciones ofrecen AR 1:10: apunta a una superficie y toca para colocarla. |
+| Inspeccionar la red | Consulta equipos, puertos, extremos, IPv4, VLAN y configuración importada disponible. |
+| Identificar cables | Cobre azul y fibra naranja, con conectores, codos y selección de enlaces. |
+| Importar Packet Tracer | Convierte .pkt a .nexus.json en Mac e importa el archivo desde el iPhone. |
+| Recuperar tu trabajo | Guarda datos localmente y restaura el laboratorio activo en 3D al abrir la app. |
+
+SMTP/IMAP, DNS, HTTP, aplicaciones, backup y monitorización son **roles descriptivos**.
+Encender o apagar equipos cambia indicadores y pantallas; los cables dibujados no demuestran
+conectividad calculada.
+
+## Instalación
+
+### App para iPhone
+
+Necesitas macOS con Xcode y el SDK iOS correspondiente. El proyecto usa **Swift 6** y tiene
+deployment target **iOS 17**. Para escanear, usa un dispositivo físico con LiDAR compatible
+con RoomPlan; la app comprueba la compatibilidad. El simulador sirve para explorar la demo
+y revisar la interfaz, sin captura LiDAR ni validación de AR física.
+
+```sh
+git clone https://github.com/ArturoVela/visor_realidad_aumentada_UNSM.git
+cd visor_realidad_aumentada_UNSM
+open NativeCapture/NexusRoomCapture.xcodeproj
+```
+
+1. Selecciona el esquema **NexusRoomCapture**.
+2. En **Signing & Capabilities**, elige tu equipo de desarrollo y ajusta el bundle ID si hace falta.
+3. Selecciona tu iPhone y ejecuta con **Run**. Autoriza la cámara al iniciar el escaneo.
+
+La app usa **SwiftUI, RoomPlan, ARKit y RealityKit**, sin paquetes externos.
+El repositorio distribuye código fuente; no incluye una IPA, un instalador ni una publicación en App Store.
+
+Para compilar sin firma para simulador:
+
+```sh
+xcodebuild \
+  -project NativeCapture/NexusRoomCapture.xcodeproj \
+  -scheme NexusRoomCapture \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/NexusRoomCaptureDerivedData \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+### Exportador Packet Tracer para Mac
+
+Herramienta independiente con Python 3.10 o posterior. Desde la raíz del repositorio:
+
+```sh
+cd Tools/PacketTracerExporter
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python export_pkt.py mi-laboratorio.pkt -o mi-laboratorio.nexus.json
+```
+
+La carpeta de salida debe existir. El original .pkt se conserva y un destino existente
+no se sustituye sin `--force`. No requiere abrir Packet Tracer ni usar un servidor.
+
+Para compilar la interfaz nativa de macOS con el mismo entorno:
+
+```sh
+NEXUS_PYTHON_EXECUTABLE="$PWD/.venv/bin/python" sh build-mac-app.sh
+open "build/Nexus Packet Exporter.app"
+```
+
+Requiere Xcode Command Line Tools y macOS 14 o posterior. La firma es ad hoc local;
+la app guarda la ruta del intérprete y debe recompilarse si mueves el entorno.
+
+[Guía del conversor y modelos compatibles](Tools/PacketTracerExporter/README.md) ·
+[Guía de la app para Mac](Tools/PacketTracerExporter/README-Mac.md)
+
+### Unity, compañero opcional
+
+Abre `Unity/` desde Unity Hub con **Unity 6000.6.9f1** y deja que se resuelvan los paquetes
+del proyecto. Incluye URP y el importador **Nexus → Importar cuarto JSON…** para inspeccionar
+la estructura exportada. **Nexus → Verificar importador** ejecuta su comprobación interna.
+Unity no es necesario para ejecutar la app iPhone y no renderiza su vista móvil.
+
+## Cómo usarlo
+
+### Mi cuarto → laboratorio a escala real
+
+1. Pulsa **Escanear** y recorre paredes, suelo y accesos.
+2. Pulsa **Terminar y generar**. La estructura se guarda antes de calcular la distribución.
+3. Explora el resultado en **Cuarto 3D** o AR 1:1 con la sesión del escaneo.
+4. Toca un equipo o cable para inspeccionarlo. También puedes usar **Más opciones → Red y conexiones**.
+
+### Sala virtual → maqueta
+
+1. Abre **Más opciones → Sala de servidores de prueba**.
+2. Explora racks, puestos y cableado en **Cuarto 3D**.
+3. En un dispositivo compatible, elige **Maqueta AR 1:10**, apunta a una superficie y toca para colocarla.
+
+### Packet Tracer → laboratorio importado
+
+1. Convierte tu .pkt con el exportador Mac, por CLI o interfaz gráfica.
+2. Transfiere el .nexus.json al iPhone, por ejemplo mediante AirDrop.
+3. Abre **Más opciones → Importar topología exportada** y selecciona el archivo.
+
+La app valida los datos y genera una sala virtual. Las coordenadas del lienzo de Packet Tracer
+no se interpretan como dimensiones reales de tu cuarto. Conserva modelos, interfaces y
+configuración original como texto cuando están disponibles.
+
+## Arquitectura
+
+![Flujo de datos: RoomPlan, demo o Packet Tracer hacia validación Swift, RealityKit y almacenamiento local](docs/images/arquitectura.svg)
+
+| Directorio | Contenido |
+| --- | --- |
+| [`NativeCapture/Sources/`](NativeCapture/Sources/) | App SwiftUI, captura, geometría, distribución, topología y render RealityKit. |
+| [`NativeCapture/Tests/`](NativeCapture/Tests/) | Checks ejecutables de estructura, distribución, topología e importación. |
+| [`Tools/PacketTracerExporter/`](Tools/PacketTracerExporter/) | Conversor Python, interfaz AppKit, pruebas y licencia GPL independiente. |
+| [`Unity/`](Unity/) | Proyecto opcional para inspección de estructuras en escritorio. |
+| [`docs/`](docs/) | Arquitectura, criterios de UX e imágenes del proyecto. |
+
+Los datos permanecen en el dispositivo: estructuras en `Documents/Captures`, última importación
+en `Documents/Labs/last-import.nexus.json` y estado diagnóstico en `Documents/Diagnostics`.
+Los diagnósticos no guardan fotografías ni coordenadas del cuarto. No hay servidor, cuentas
+ni sincronización obligatoria.
+
+## Referencias de hardware
+
+El [catálogo de hardware](NativeCapture/Sources/HardwareCatalog.swift) incluye fuentes oficiales
+Cisco y Dell. Los modelos 3D son representaciones exteriores aproximadas, no planos CAD certificados.
+
+| Referencia | Tipo |
+| --- | --- |
+| Cisco R42612 | Rack pasivo de 42 U |
+| Cisco Catalyst 2960-24TT-L | Switch de acceso |
+| Cisco Catalyst 3560-24PS | Switch multicapa |
+| Cisco ISR 1941 / ISR 2911 | Routers |
+| Cisco ASA 5505 | Firewall |
+| Cisco UCS C220 M5 SFF | Servidor de rack de 1 U |
+| Cisco IP Phone 7960G | Teléfono IP |
+| Dell OptiPlex 7010 Mini Tower (2012) | Computadora |
+| Dell Latitude 5420 | Laptop |
+
+`Server-PT`, `PC-PT` y `Laptop-PT` conservan su identidad importada; usan referencias del catálogo
+para representarse. El rack es una colocación pasiva, no un dispositivo activo importado.
+
+## Comprobaciones reproducibles
+
+Desde la raíz del repositorio, ejecuta los cuatro checks Swift:
+
+```sh
+cd NativeCapture
+xcrun swiftc Sources/RoomStructure.swift Tests/RoomStructureCheck.swift -o /tmp/nexus-room-check
+/tmp/nexus-room-check
+
+xcrun swiftc Sources/RoomStructure.swift Sources/LabLayout.swift Tests/LabLayoutCheck.swift -o /tmp/nexus-layout-check
+/tmp/nexus-layout-check
+
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Tests/LabTopologyCheck.swift -o /tmp/nexus-topology-check
+/tmp/nexus-topology-check
+
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabImport.swift Tests/LabImportCheck.swift -o /tmp/nexus-import-check
+/tmp/nexus-import-check
+```
+
+Para comprobar el exportador después de preparar su entorno, desde la raíz:
+
+```sh
+cd Tools/PacketTracerExporter
+.venv/bin/python -B test_export.py
+```
+
+Los checks cubren geometría, contención, accesos, determinismo, JSON, puertos, medios, IPv4,
+VLAN, importaciones inválidas y escritura atómica. El check Python genera una práctica propia
+temporal y prueba contenedores .pkt modernos y legacy.
+
+**Verificación para esta publicación:** build de simulador y los cinco checks anteriores aprobados.
+Las pruebas físicas de Maqueta AR 1:10 y las mediciones comparativas de precisión/rendimiento
+siguen pendientes; consulta la [documentación nativa](NativeCapture/README.md) para el detalle de QA.
+
+## Límites y datos que debes revisar
+
+- **Medición:** RoomPlan estima dimensiones. No hay editor manual ni precisión métrica garantizada;
+  geometrías curvas, inclinadas o incompletas pueden producir avisos o errores.
+- **Distribución:** heurística determinista, no certificación de una instalación. El blanco superpuesto
+  puede ocultar muebles en pantalla que siguen físicamente presentes.
+- **AR al reiniciar:** se recupera la vista 3D, sin mapas AR persistentes. AR 1:1 requiere un nuevo
+  escaneo; la maqueta debe colocarse otra vez.
+- **Importación:** hasta 8 MiB de JSON, 96 equipos, 192 enlaces, 64 VLAN, 12 racks y 24 puestos.
+  El conversor limita .pkt a 16 MiB y XML descomprimido a 32 MiB. Modelos o medios no admitidos,
+  actividades .pka y evaluaciones producen error.
+- **Configuración importada:** el JSON puede conservar contraseñas presentes en el laboratorio original.
+  Revisa y elimina datos sensibles antes de compartirlo o publicarlo.
+- **Tier IV:** la demo describe conceptos de energía/refrigeración A/B; no constituye un diseño
+  constructivo ni una certificación. Las medidas de la demo no son una exigencia normativa.
+
+Capturas privadas, entornos Python, cachés y resultados de compilación quedan excluidos de Git.
+
+## Documentación y licencia
+
+- [App nativa y contratos JSON](NativeCapture/README.md).
+- [Arquitectura y flujo de datos](docs/ARCHITECTURE.md).
+- [Definición del producto](PRODUCT.md) y [criterios de UX](docs/UX_BRIEF.md).
+- [Exportador Packet Tracer](Tools/PacketTracerExporter/README.md).
+
+`Tools/PacketTracerExporter/` se distribuye bajo **GPL-3.0-or-later**; consulta su
+[LICENSE](Tools/PacketTracerExporter/LICENSE). Usa `packet-tracer-pkt-format==0.4.1`
+de aacanadaa, con la misma licencia. La herramienta se comunica por JSON y sus dependencias
+Python no se incorporan al ejecutable iPhone.
+
+El resto del repositorio no declara una licencia general de reutilización. Las marcas y nombres
+de productos pertenecen a sus respectivos titulares; este proyecto no está afiliado a Cisco ni Dell.

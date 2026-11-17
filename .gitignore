@@ -1,0 +1,35 @@
+.DS_Store
+
+# Unity: cachés y archivos generados por el editor.
+Unity/[Ll]ibrary/
+Unity/[Tt]emp/
+Unity/[Oo]bj/
+Unity/[Bb]uild/
+Unity/[Bb]uilds/
+Unity/[Ll]ogs/
+Unity/[Uu]ser[Ss]ettings/
+Unity/MemoryCaptures/
+Unity/Recordings/
+Unity/*.csproj
+Unity/*.sln
+Unity/*.slnx
+
+# Xcode: preferencias personales y resultados de compilación.
+**/xcuserdata/
+**/*.xcuserstate
+NativeCapture/build/
+NativeCapture/DerivedData/
+**/.venv/
+Tools/PacketTracerExporter/build/
+
+# Python y configuración privada local.
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+
+# Capturas reales del cuarto: datos locales, separados del código.
+LocalCaptures/
+Unity/Assets/LocalCaptures/
+Unity/Assets/LocalCaptures.meta

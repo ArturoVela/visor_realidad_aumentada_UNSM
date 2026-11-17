@@ -15,11 +15,21 @@ También incluye una sala virtual de prueba y un exportador local de topologías
 ![Swift 6](https://img.shields.io/badge/Swift-6-F05138)
 ![Unity opcional](https://img.shields.io/badge/Unity-6.6%20opcional-64748b)
 
-[Capturas](#capturas-de-la-aplicación) · [Instalación](#instalación) ·
+[Capturas](#capturas-de-la-aplicación) · [Cómo empezar](#elige-tu-punto-de-partida) · [Instalación](#instalación) ·
 [Uso](#cómo-usarlo) · [Pruebas](#comprobaciones-reproducibles) · [Arquitectura](docs/ARCHITECTURE.md)
 
 > Proyecto independiente, no oficial de Cisco. Visualiza hardware y datos de una topología;
 > no ejecuta Cisco IOS, comandos CLI, routing, paquetes ni servicios de red.
+
+## Elige tu punto de partida
+
+| Entrada | Necesitas | Resultado |
+| --- | --- | --- |
+| **Sala de prueba** | App iOS o simulador de Xcode | Explorar un laboratorio 3D sin escanear una habitación. |
+| **Tu cuarto** | iPhone compatible con RoomPlan y LiDAR | Generar una distribución a partir de la estructura capturada y abrir AR 1:1. |
+| **Packet Tracer** | Exportador en Mac y app iPhone | Convertir un `.pkt` a `.nexus.json` e inspeccionar su topología en 3D. |
+
+Para conocer la interfaz, empieza por la **sala de prueba**. El simulador no valida captura LiDAR ni AR física. Unity es un compañero opcional de escritorio; la app iPhone funciona sin Unity.
 
 ## Capturas de la aplicación
 
@@ -56,6 +66,9 @@ conectividad calculada.
 
 ### App para iPhone
 
+<details open>
+<summary><strong>Abrir el proyecto y ejecutar la app nativa</strong></summary>
+
 Necesitas macOS con Xcode y el SDK iOS correspondiente. El proyecto usa **Swift 6** y tiene
 deployment target **iOS 17**. Para escanear, usa un dispositivo físico con LiDAR compatible
 con RoomPlan; la app comprueba la compatibilidad. El simulador sirve para explorar la demo
@@ -87,7 +100,12 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
+</details>
+
 ### Exportador Packet Tracer para Mac
+
+<details>
+<summary><strong>Preparar el conversor y su interfaz de macOS</strong></summary>
 
 Herramienta independiente con Python 3.10 o posterior. Desde la raíz del repositorio:
 
@@ -114,12 +132,19 @@ la app guarda la ruta del intérprete y debe recompilarse si mueves el entorno.
 [Guía del conversor y modelos compatibles](Tools/PacketTracerExporter/README.md) ·
 [Guía de la app para Mac](Tools/PacketTracerExporter/README-Mac.md)
 
+</details>
+
 ### Unity, compañero opcional
+
+<details>
+<summary><strong>Inspeccionar estructuras exportadas desde Unity</strong></summary>
 
 Abre `Unity/` desde Unity Hub con **Unity 6000.6.9f1** y deja que se resuelvan los paquetes
 del proyecto. Incluye URP y el importador **Nexus → Importar cuarto JSON…** para inspeccionar
 la estructura exportada. **Nexus → Verificar importador** ejecuta su comprobación interna.
 Unity no es necesario para ejecutar la app iPhone y no renderiza su vista móvil.
+
+</details>
 
 ## Cómo usarlo
 
@@ -168,6 +193,9 @@ ni sincronización obligatoria.
 El [catálogo de hardware](NativeCapture/Sources/HardwareCatalog.swift) incluye fuentes oficiales
 Cisco y Dell. Los modelos 3D son representaciones exteriores aproximadas, no planos CAD certificados.
 
+<details>
+<summary><strong>Ver modelos de referencia y equivalencias de Packet Tracer</strong></summary>
+
 | Referencia | Tipo |
 | --- | --- |
 | Cisco R42612 | Rack pasivo de 42 U |
@@ -182,6 +210,8 @@ Cisco y Dell. Los modelos 3D son representaciones exteriores aproximadas, no pla
 
 `Server-PT`, `PC-PT` y `Laptop-PT` conservan su identidad importada; usan referencias del catálogo
 para representarse. El rack es una colocación pasiva, no un dispositivo activo importado.
+
+</details>
 
 ## Comprobaciones reproducibles
 
@@ -213,7 +243,7 @@ Los checks cubren geometría, contención, accesos, determinismo, JSON, puertos,
 VLAN, importaciones inválidas y escritura atómica. El check Python genera una práctica propia
 temporal y prueba contenedores .pkt modernos y legacy.
 
-**Verificación para esta publicación:** build de simulador y los cinco checks anteriores aprobados.
+**Registro de verificación de la versión 0.3.0:** build de simulador y los cinco checks anteriores aprobados.
 Las pruebas físicas de Maqueta AR 1:10 y las mediciones comparativas de precisión/rendimiento
 siguen pendientes; consulta la [documentación nativa](NativeCapture/README.md) para el detalle de QA.
 

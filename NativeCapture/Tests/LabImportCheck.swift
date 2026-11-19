@@ -35,9 +35,10 @@ struct LabImportCheck {
         let mounted = project.topology.devices.filter { $0.placementID == rack.id }
         precondition(rack.size == SIMD3<Float>(0.597, 2.013, 1.266))
         for device in mounted {
-            let height = HardwareCatalog.item(device.modelID)?.size?.y ?? 0.04445
-            precondition(device.offset.y - height / 2 >= 0.1499 && device.offset.y + height / 2 <= 1.85)
-            let size = HardwareCatalog.item(device.modelID)?.size ?? SIMD3(0.445, 0.04445, 0.30)
+            let size = HardwareCatalog.renderSize(device.modelID)
+            let slot = RackMount.slot(device.modelID, near: device.offset.y)
+            precondition(slot > 0 && slot + RackMount.units(device.modelID) <= 42)
+            precondition(device.offset == RackMount.center(device.modelID, rackDepth: rack.size.z, slot: slot))
             precondition(abs(device.offset.x) + size.x / 2 <= rack.size.x / 2)
             precondition(abs(device.offset.z) + size.z / 2 <= rack.size.z / 2)
         }

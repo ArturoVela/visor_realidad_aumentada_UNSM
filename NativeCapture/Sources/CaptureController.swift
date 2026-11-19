@@ -13,6 +13,7 @@ final class CaptureController {
     private(set) var room: RoomStructure?
     private(set) var layout: LabLayout?
     private(set) var arSession: ARSession?
+    private(set) var hasSavedWorldMap = false
     private(set) var cameraStatusString: String?
     let isSupported = RoomCaptureSession.isSupported
     let supportsMesh = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
@@ -24,8 +25,27 @@ final class CaptureController {
     @ObservationIgnored private var liveSession: ARSession?
     @ObservationIgnored private var retainedCaptureView: RoomCaptureView?
     @ObservationIgnored private var didRestore = false
+    @ObservationIgnored private var captureSite = "principal"
 
     var isBusy: Bool { phase == .restoring || phase == .permission || phase == .capturing || phase == .processing }
+
+    func selectSite(_ site: String) async {
+        if site != captureSite {
+            cancel()
+            arSession?.pause()
+            arSession = nil
+            retainedCaptureView = nil
+            room = nil
+            layout = nil
+            savedURL = nil
+            summary = ""
+            hasSavedWorldMap = false
+            didRestore = false
+            phase = .ready
+            captureSite = site
+        }
+        await restoreLatest()
+    }
 
     func restoreLatest() async {
         guard !didRestore, !isBusy, room == nil else { return }
@@ -35,8 +55,7 @@ final class CaptureController {
         phase = .restoring
         await Task.yield()
         do {
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Captures", isDirectory: true)
+            let directory = try RoomStructure.captureDirectory(site: captureSite)
             guard FileManager.default.fileExists(atPath: directory.path) else {
                 if activeID == id { activeID = nil; phase = .ready }
                 return
@@ -62,6 +81,9 @@ final class CaptureController {
                     room = structure
                     layout = plan
                     savedURL = url
+                    hasSavedWorldMap = Self.worldMapURL(for: structure.roomID).map {
+                        FileManager.default.fileExists(atPath: $0.path)
+                    } ?? false
                     summary = Self.description(structure)
                     activeID = nil
                     phase = .saved
@@ -84,12 +106,7 @@ final class CaptureController {
         let id = UUID()
         activeID = id
         phase = .permission
-        let authorized: Bool
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: authorized = true
-        case .notDetermined: authorized = await AVCaptureDevice.requestAccess(for: .video)
-        default: authorized = false
-        }
+        let authorized = await Self.requestCameraAccess()
         guard activeID == id, phase == .permission else { return }
         guard authorized else {
             fail("Cámara sin permiso. Autorízala en Ajustes para capturar el cuarto.")
@@ -107,6 +124,14 @@ final class CaptureController {
         self.delegate = delegate
         activeID = id
         phase = .capturing
+    }
+
+    static func requestCameraAccess() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
+        default: return false
+        }
     }
 
     func previewStarted() {
@@ -170,9 +195,81 @@ final class CaptureController {
 
     func pauseAR() { arSession?.pause() }
 
-    func resumeAR() {
-        guard !isBusy, let session = arSession, let configuration = session.configuration else { return }
-        session.run(configuration)
+    func resumeAR(realign: Bool = false) throws {
+        guard !isBusy else { return }
+        if !realign, let arSession, let configuration = arSession.configuration {
+            arSession.run(configuration)
+            return
+        }
+        guard let room, ARWorldTrackingConfiguration.isSupported, hasSavedWorldMap,
+              let url = Self.worldMapURL(for: room.roomID) else {
+            throw LabLayoutError.invalid("Este cuarto necesita un escaneo nuevo para alinearse con la cámara.")
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let map = try NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let configuration = ARWorldTrackingConfiguration()
+            configuration.initialWorldMap = map
+            if supportsMesh { configuration.sceneReconstruction = .mesh }
+            let session = ARSession()
+            arSession?.pause()
+            session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+            arSession = session
+        } catch {
+            hasSavedWorldMap = false
+            throw LabLayoutError.invalid("No se pudo recuperar el mapa AR de este cuarto. Vuelve a escanearlo.")
+        }
+    }
+
+    func saveWorldMapIfReady() async {
+        guard !hasSavedWorldMap, let session = arSession, let frame = session.currentFrame,
+              case .normal = frame.camera.trackingState,
+              [.mapped, .extending].contains(frame.worldMappingStatus), let roomID = room?.roomID,
+              let url = Self.worldMapURL(for: roomID) else { return }
+        do {
+            let map = try await session.currentWorldMap()
+            try Task.checkCancellation()
+            guard arSession === session, room?.roomID == roomID else { return }
+            try Self.writeWorldMap(map, to: url)
+            hasSavedWorldMap = true
+        } catch {
+            // A map may be temporarily unavailable. The 3D capture and live session stay usable.
+        }
+    }
+
+    static let homePlacementName = "NexusAR.HomeLab.v1"
+
+    static func placementMapURL(_ name: String) -> URL {
+        let file = name == homePlacementName ? "HomeLab-v1" : name
+        return URL.applicationSupportDirectory.appendingPathComponent("RoomWorldMaps", isDirectory: true)
+            .appendingPathComponent(file).appendingPathExtension("arworldmap")
+    }
+
+    static func loadPlacementMap(_ name: String) throws -> ARWorldMap {
+        let data = try Data(contentsOf: placementMapURL(name))
+        guard let map = try NSKeyedUnarchiver.unarchivedObject(ofClass: ARWorldMap.self, from: data),
+              map.anchors.contains(where: { $0.name == name }) else {
+            throw LabLayoutError.invalid("El mapa guardado no contiene el punto de referencia.")
+        }
+        return map
+    }
+
+    static func writeWorldMap(_ map: ARWorldMap, to url: URL) throws {
+        let data = try NSKeyedArchiver.archivedData(withRootObject: map, requiringSecureCoding: true)
+        var directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try directory.setResourceValues(resourceValues)
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+    }
+
+    private static func worldMapURL(for roomID: UUID) -> URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("RoomWorldMaps", isDirectory: true)
+            .appendingPathComponent(roomID.uuidString + ".arworldmap")
     }
 
     private static func description(_ room: RoomStructure) -> String {
@@ -194,7 +291,7 @@ final class CaptureController {
                 try Task.checkCancellation()
                 guard activeID == id else { return }
                 let structure = RoomStructure(room: room)
-                let url = try structure.save()
+                let url = try structure.save(site: captureSite)
                 capturedURL = url
                 savedURL = url
                 let plan = try LabLayoutPlanner.plan(room: structure)
@@ -202,6 +299,11 @@ final class CaptureController {
                 layout = plan
                 summary = Self.description(structure)
                 arSession = liveSession
+                hasSavedWorldMap = false
+                if supportsMesh, let configuration = liveSession?.configuration as? ARWorldTrackingConfiguration {
+                    configuration.sceneReconstruction = .mesh
+                    liveSession?.run(configuration)
+                }
                 retainedCaptureView = captureView
                 captureView?.captureSession.delegate = nil
                 captureView = nil

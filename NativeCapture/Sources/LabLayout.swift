@@ -456,6 +456,16 @@ nonisolated enum LabMonitorMount {
     static let sideOffset: Float = 0.240
     static let inset: Float = 0.028
     static let bezel: Float = 0.018
+    static let faceSize = CGSize(width: 320, height: 180)
+    static let heading = CGRect(x: 14, y: 8, width: 292, height: 62)
+
+    static func chartFrame(at column: Int) -> CGRect {
+        CGRect(x: 14 + CGFloat(column) * 150, y: 76, width: 142, height: 53)
+    }
+
+    static func captionFrame(at column: Int) -> CGRect {
+        chartFrame(at: column).offsetBy(dx: 0, dy: 57)
+    }
 
     static func centerX(for rackWidth: Float, side: Float) -> Float {
         side * (rackWidth / 2 + sideOffset)

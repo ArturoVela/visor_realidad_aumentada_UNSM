@@ -16,6 +16,8 @@
 		A00000000000000000000004 /* RoomPlanExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* RoomPlanExport.swift */; };
 		A00000000000000000000005 /* LabLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006 /* LabLayout.swift */; };
 		A00000000000000000000006 /* LabScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000007 /* LabScene.swift */; };
+		A00000000000000000000011 /* LabStereoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* LabStereoView.swift */; };
+		A00000000000000000000012 /* LabConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* LabConsoleView.swift */; };
 		A00000000000000000000007 /* HardwareCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008 /* HardwareCatalog.swift */; };
 		A00000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -31,6 +33,8 @@
 		B00000000000000000000005 /* NexusRoomCapture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NexusRoomCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B00000000000000000000006 /* LabLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabLayout.swift; sourceTree = "<group>"; };
 		B00000000000000000000007 /* LabScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabScene.swift; sourceTree = "<group>"; };
+		B00000000000000000000011 /* LabStereoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabStereoView.swift; sourceTree = "<group>"; };
+		B00000000000000000000012 /* LabConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabConsoleView.swift; sourceTree = "<group>"; };
 		B00000000000000000000008 /* HardwareCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HardwareCatalog.swift; sourceTree = "<group>"; };
 		B00000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -64,6 +68,8 @@
 				B00000000000000000000004 /* RoomPlanExport.swift */,
 				B00000000000000000000008 /* HardwareCatalog.swift */,
 				B00000000000000000000007 /* LabScene.swift */,
+				B00000000000000000000011 /* LabStereoView.swift */,
+				B00000000000000000000012 /* LabConsoleView.swift */,
 				B0000000000000000000000A /* LabTopology.swift */,
 				B0000000000000000000000B /* LabImport.swift */,
 				B0000000000000000000000C /* TopologyInspector.swift */,
@@ -156,6 +162,8 @@
 				A00000000000000000000004 /* RoomPlanExport.swift in Sources */,
 				A00000000000000000000007 /* HardwareCatalog.swift in Sources */,
 				A00000000000000000000006 /* LabScene.swift in Sources */,
+				A00000000000000000000011 /* LabStereoView.swift in Sources */,
+				A00000000000000000000012 /* LabConsoleView.swift in Sources */,
 				A00000000000000000000009 /* LabTopology.swift in Sources */,
 				A0000000000000000000000A /* LabImport.swift in Sources */,
 				A0000000000000000000000B /* TopologyInspector.swift in Sources */,
@@ -209,7 +217,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
-				INFOPLIST_KEY_NSCameraUsageDescription = "La cámara y LiDAR permiten medir la estructura del cuarto para crear su laboratorio virtual.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara y LiDAR para medir tu cuarto y mantener el laboratorio virtual en su posición mientras caminas.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -238,7 +247,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
-				INFOPLIST_KEY_NSCameraUsageDescription = "La cámara y LiDAR permiten medir la estructura del cuarto para crear su laboratorio virtual.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara y LiDAR para medir tu cuarto y mantener el laboratorio virtual en su posición mientras caminas.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

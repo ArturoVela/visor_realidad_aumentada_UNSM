@@ -3,13 +3,13 @@ import simd
 
 nonisolated enum LabImport {
     private static let maximumBytes = 8 * 1024 * 1024
-    private static let rackUnit: Float = 0.04445
 
     static func project(from data: Data) throws -> LabProject {
         guard !data.isEmpty, data.count <= maximumBytes else {
             throw LabLayoutError.invalid("El laboratorio debe ocupar entre 1 byte y 8 MiB.")
         }
         var topology = try JSONDecoder().decode(LabTopology.self, from: data)
+        topology.operationsProfile = nil
         try validateFields(topology)
         // Imported coordinates are not a measured room and never control placement.
         for index in topology.devices.indices {
@@ -36,21 +36,19 @@ nonisolated enum LabImport {
                 default: topology.devices[index].offset = SIMD3(-0.47, 0.79, 0.13)
                 }
             } else {
-                let units = model == "router-1941" || model == "router-2911" ? 2 : 1
+                let units = RackMount.units(model)
                 var rack = max(0, usedRackUnits.count - 1)
                 if usedRackUnits.isEmpty || usedRackUnits[rack] + units > 38 {
                     guard usedRackUnits.count < 12 else { throw LabLayoutError.invalid("La importación necesita más de 12 racks.") }
                     usedRackUnits.append(0); rack = usedRackUnits.count - 1
                 }
-                let height = HardwareCatalog.item(model)?.size?.y ?? rackUnit
-                let depth = HardwareCatalog.item(model)?.size?.z ?? (model == "server-c220m5" ? 0.787 : 0.30)
-                let center = 0.15 + Float(usedRackUnits[rack]) * rackUnit + height / 2
-                guard center - height / 2 >= 0.1499, center + height / 2 <= 1.85,
-                      depth > 0, depth <= rackSize.z - 0.10 else {
+                let size = HardwareCatalog.renderSize(model)
+                let center = RackMount.center(model, rackDepth: rackSize.z, slot: usedRackUnits[rack] + 1)
+                guard center.y + size.y / 2 <= 1.85, size.z <= rackSize.z - 0.16 else {
                     throw LabLayoutError.invalid("El equipo no cabe en el espacio útil del rack: \(topology.devices[index].name).")
                 }
                 topology.devices[index].placementID = "import-rack-\(rack + 1)"
-                topology.devices[index].offset = SIMD3(0, center, -rackSize.z / 2 + 0.07 + depth / 2)
+                topology.devices[index].offset = center
                 // ponytail: one empty U keeps educational labels readable; denser packing needs a label policy.
                 usedRackUnits[rack] += units + 1
             }

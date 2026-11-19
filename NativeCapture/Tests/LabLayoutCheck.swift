@@ -51,12 +51,31 @@ struct LabLayoutCheck {
     }
 
     static func main() throws {
+        let points: [SIMD3<Float>] = [SIMD3(-7, 0, -5), SIMD3(7, 0, 5), SIMD3(7, 3, -5), SIMD3(-7, 3, 5)]
+        let orbitTarget = SIMD3<Float>(0, 1, 0)
+        let rotation = simd_quatf(angle: 0.7, axis: SIMD3<Float>(0, 1, 0))
+        let vertical = tan(Float(55) * .pi / 360) * 0.86
+        for aspect: Float in [0.56, 2.2] {
+            let distance = LabGeometry.orbitDistance(for: points, target: orbitTarget, rotation: rotation,
+                                                     aspect: aspect, verticalField: 55)
+            for point in points {
+                let local = rotation.inverse.act(point - orbitTarget)
+                let depth = distance - local.z
+                precondition(depth > 0 && abs(local.x) <= depth * vertical * aspect + 0.0001)
+                precondition(abs(local.y) <= depth * vertical + 0.0001, "El modelo queda dentro del encuadre.")
+            }
+        }
         let rectangle: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(5, 0), SIMD2(5, 3.2), SIMD2(0, 3.2)]
         let base = room(rectangle)
         let layout = try LabLayoutPlanner.plan(room: base)
         check(layout)
         precondition(layout.placements.contains { $0.kind == .rack })
         precondition(layout.placements.contains { $0.kind == .workstation })
+        for placement in layout.placements {
+            let aisleZ: Float = 1.6 + (1.266 - 0.75) / 2
+            let towardAisle = aisleZ - placement.position.z
+            precondition(-cos(placement.yaw) * towardAisle > 0, "El frente debe mirar al pasillo.")
+        }
         let repeated = try LabLayoutPlanner.plan(room: base)
         precondition(layout.placements == repeated.placements)
         let concave: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(5, 0), SIMD2(5, 2),
@@ -71,6 +90,28 @@ struct LabLayoutCheck {
         }
         precondition(abs(area - 16) < 0.0001, "Triángulos deben cubrir área cóncava sin rellenar hueco")
         precondition(!LabGeometry.contains(SIMD2(4, 4), polygon: concave))
+        let from = SIMD2<Float>(4, 1), to = SIMD2<Float>(1, 4)
+        for polygon in [concave, Array(concave.reversed())] {
+            let route = LabGeometry.trayPath(from: from, to: to, within: polygon) ?? []
+            precondition(route.count == 3 && route.first == from && route.last == to)
+            for (start, end) in zip(route, route.dropFirst()) {
+                for step in 0...20 {
+                    let point = simd_mix(start, end, SIMD2(repeating: Float(step) / 20))
+                    precondition(LabGeometry.contains(point, polygon: polygon), "Bandeja fuera del cuarto.")
+                }
+            }
+        }
+        precondition(LabGeometry.trayPath(from: from, to: SIMD2(4, 4), within: concave) == nil)
+        let cornerPath: [SIMD3<Float>] = [SIMD3(0, 0, 0), SIMD3(0.1, 0, 0), SIMD3(0.1, 0, 0.12)]
+        let bend = LabGeometry.cableBends(cornerPath, radius: 0.040) ?? []
+        precondition(bend.count == 9 && bend.first == cornerPath.first && bend.last == cornerPath.last)
+        let center = SIMD3<Float>(0.060, 0, 0.040)
+        precondition(bend.dropFirst().dropLast().allSatisfy { abs(simd_distance($0, center) - 0.04) < 0.0001 })
+        let picking = LabGeometry.cableBends(cornerPath, radius: 0.040, segmentsPerBend: 2) ?? []
+        precondition(picking == [bend[0], bend[1], bend[4], bend[7], bend[8]], "Picking usa puntos del mismo arco.")
+        precondition(LabGeometry.cableBends(cornerPath, radius: 0.11) == nil)
+        let tightS: [SIMD3<Float>] = [SIMD3(0, 0, 0), SIMD3(0.1, 0, 0), SIMD3(0.1, 0, 0.07), SIMD3(0.23, 0, 0.07)]
+        precondition(LabGeometry.cableBends(tightS, radius: 0.04) == nil, "No se reduce el radio para encajar una doble curva.")
         check(try LabLayoutPlanner.plan(room: room(concave)))
         let tiny = try LabLayoutPlanner.plan(room: room([SIMD2(0, 0), SIMD2(1.4, 0), SIMD2(1.4, 1.4), SIMD2(0, 1.4)]))
         precondition(tiny.placements.isEmpty && !tiny.warnings.isEmpty)

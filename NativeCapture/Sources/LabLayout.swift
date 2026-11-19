@@ -17,6 +17,101 @@ nonisolated struct LabLayout: Sendable {
     let floorPolygon: [SIMD2<Float>]
     let placements: [LabPlacement]
     let warnings: [String]
+    var facility: TierFacility? = nil
+}
+
+nonisolated enum LabARScale: Int, CaseIterable, Sendable {
+    case fullSize = 1, half = 2, fifth = 5, tenth = 10, twentieth = 20
+
+    var title: String { "1:\(rawValue)" }
+    var factor: Float { 1 / Float(rawValue) }
+}
+
+nonisolated struct LabARSpace: Sendable {
+    let size: SIMD3<Double>
+    var floorArea: Double { size.x * size.z }
+
+    init?(virtualRoom room: RoomStructure, layout: LabLayout) {
+        let floor = layout.floorPolygon
+        guard floor.count >= 3,
+              let left = floor.map(\.x).min(), let right = floor.map(\.x).max(),
+              let front = floor.map(\.y).min(), let back = floor.map(\.y).max(),
+              let height = room.surfaces.filter({ $0.kind == .wall })
+                .compactMap({ $0.dimensions.dropFirst().first }).max() else { return nil }
+        let dimensions = SIMD3(Double(right - left), Double(height), Double(back - front))
+        guard [dimensions.x, dimensions.y, dimensions.z].allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
+        size = dimensions
+    }
+
+    private init(size: SIMD3<Double>) { self.size = size }
+
+    func scaled(to scale: LabARScale) -> LabARSpace {
+        LabARSpace(size: size / Double(scale.rawValue))
+    }
+}
+
+nonisolated struct TierFacility: Equatable, Sendable {
+    // Footprint of this template, including circulation allowance, in metres.
+    static let width: Float = 14.6
+    static let depth: Float = 10.8
+    static let minimumHeight: Float = 3.1
+    let origin: SIMD3<Float>
+    let yaw: Float
+    let height: Float
+    var conduitHeight: Float { min(2.65, height - 0.43) }
+    static let conduitAZ: Float = -3.96
+
+    func world(_ point: SIMD3<Float>) -> SIMD3<Float> {
+        origin + simd_quatf(angle: yaw, axis: SIMD3(0, 1, 0)).act(point)
+    }
+
+    func place(_ placement: LabPlacement) -> LabPlacement {
+        LabPlacement(id: placement.id, kind: placement.kind, title: placement.title,
+                     position: world(placement.position), yaw: placement.yaw + yaw, size: placement.size)
+    }
+
+    static func fit(room: RoomStructure, layout: LabLayout) throws -> TierFacility {
+        let heights = try room.surfaces.filter { $0.kind == .wall }.map {
+            try LabGeometry.matrix($0).columns.3.y + $0.dimensions[1] / 2 - layout.floorHeight
+        }
+        let height = heights.min() ?? 0
+        let floor = layout.floorPolygon
+        guard height >= minimumHeight, layout.area >= width * depth, floor.count >= 3 else { throw fitError }
+        let edges = zip(floor, floor.dropFirst() + floor.prefix(1)).map { $1 - $0 }
+        guard let longest = edges.max(by: { simd_length_squared($0) < simd_length_squared($1) }),
+              simd_length_squared(longest) > 0.01 else { throw fitError }
+        let base = atan2(-longest.y, longest.x)
+        let openings = try room.surfaces.filter { $0.kind == .door || $0.kind == .opening }.map {
+            try LabGeometry.matrix($0).columns.3
+        }
+        for turn in 0..<4 {
+            let yaw = base + Float(turn) * .pi / 2
+            let x = SIMD2(cos(yaw), -sin(yaw)), z = SIMD2(sin(yaw), cos(yaw))
+            let xs = floor.map { simd_dot($0, x) }, zs = floor.map { simd_dot($0, z) }
+            guard let xMin = xs.min(), let xMax = xs.max(), let zMin = zs.min(), let zMax = zs.max(),
+                  xMax - xMin >= width, zMax - zMin >= depth else { continue }
+            let center = x * ((xMax + xMin) / 2) + z * ((zMax + zMin) / 2)
+            let corners = [SIMD2<Float>(-1, -1), SIMD2(1, -1), SIMD2(1, 1), SIMD2(-1, 1)].map {
+                center + x * ($0.x * width / 2) + z * ($0.y * depth / 2)
+            }
+            guard corners.indices.allSatisfy({
+                LabGeometry.traySpanFits(from: corners[$0], to: corners[($0 + 1) % 4], within: floor)
+            }) else { continue }
+            // A nearby opening must lead to the clear operator side, away from the technical bays.
+            let hasAccess = openings.contains {
+                let delta = SIMD2($0.x, $0.z) - center
+                return simd_dot(delta, z) > depth / 2 - 0.75
+            }
+            if hasAccess {
+                return TierFacility(origin: SIMD3(center.x, layout.floorHeight, center.y), yaw: yaw, height: height)
+            }
+        }
+        throw fitError
+    }
+
+    private static var fitError: LabLayoutError {
+        .invalid("La plantilla necesita una zona libre de al menos 14,6 × 10,8 m, 3,1 m de altura y acceso por operación. Usa el cuarto 3D para revisar el contorno.")
+    }
 }
 
 nonisolated enum LabLayoutError: LocalizedError {
@@ -25,6 +120,17 @@ nonisolated enum LabLayoutError: LocalizedError {
 }
 
 nonisolated enum LabGeometry {
+    static func orbitDistance(for points: [SIMD3<Float>], target: SIMD3<Float>, rotation: simd_quatf,
+                              aspect: Float, verticalField: Float) -> Float {
+        let vertical = tan(verticalField * .pi / 360) * 0.86
+        let horizontal = vertical * aspect
+        let inverse = rotation.inverse
+        return points.reduce(Float(2.4)) { distance, point in
+            let local = inverse.act(point - target)
+            return max(distance, local.z + max(0.12, abs(local.x) / horizontal, abs(local.y) / vertical))
+        }
+    }
+
     static func matrix(_ surface: RoomStructure.Surface) throws -> simd_float4x4 {
         let a = surface.transformColumnMajor
         guard a.count == 16, a.allSatisfy(\.isFinite),
@@ -64,6 +170,71 @@ nonisolated enum LabGeometry {
                p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { inside.toggle() }
         }
         return inside
+    }
+
+    static func traySpanFits(from a: SIMD2<Float>, to b: SIMD2<Float>, within polygon: [SIMD2<Float>]) -> Bool {
+        contains(a, polygon: polygon) && contains(b, polygon: polygon) &&
+            polygon.indices.allSatisfy {
+                segmentDistance(a, b, polygon[$0], polygon[($0 + 1) % polygon.count]) >= 0.065
+            }
+    }
+
+    static func trayPath(from a: SIMD2<Float>, to b: SIMD2<Float>, within polygon: [SIMD2<Float>]) -> [SIMD2<Float>]? {
+        guard contains(a, polygon: polygon), contains(b, polygon: polygon) else { return nil }
+        func fits(_ start: SIMD2<Float>, _ end: SIMD2<Float>) -> Bool {
+            traySpanFits(from: start, to: end, within: polygon)
+        }
+        if fits(a, b) { return [a, b] }
+        // shortcut: one interior bend covers simple cutouts. Rooms requiring more bends need an authored tray route.
+        let direction: Float = signedArea(polygon) > 0 ? 1 : -1
+        func inward(_ edge: SIMD2<Float>) -> SIMD2<Float> {
+            SIMD2(-edge.y, edge.x) * direction / max(simd_length(edge), 0.0001)
+        }
+        var best: SIMD2<Float>?
+        var length = Float.infinity
+        for i in polygon.indices {
+            let corner = polygon[i]
+            let before = inward(corner - polygon[(i + polygon.count - 1) % polygon.count])
+            let after = inward(polygon[(i + 1) % polygon.count] - corner)
+            let bend = corner + (before + after) * 0.18
+            let distance = simd_distance(a, bend) + simd_distance(b, bend)
+            if distance < length, fits(a, bend), fits(bend, b) { best = bend; length = distance }
+        }
+        return best.map { [a, $0, b] }
+    }
+
+    static func cableBends(_ points: [SIMD3<Float>], radius: Float, segmentsPerBend: Int = 6) -> [SIMD3<Float>]? {
+        guard radius.isFinite, radius > 0, (2...12).contains(segmentsPerBend) else { return nil }
+        var path: [SIMD3<Float>] = []
+        for point in points where path.last.map({ simd_distance($0, point) > 0.0001 }) ?? true {
+            if path.count >= 2 {
+                let incoming = simd_normalize(path[path.count - 1] - path[path.count - 2])
+                let outgoing = simd_normalize(point - path[path.count - 1])
+                if simd_dot(incoming, outgoing) > 0.9999 { path.removeLast() }
+            }
+            path.append(point)
+        }
+        guard path.count > 2 else { return path }
+        var arcs: [[SIMD3<Float>]] = [[path[0]]]
+        var previousTrim: Float = 0
+        for i in 1..<(path.count - 1) {
+            let incoming = path[i] - path[i - 1], outgoing = path[i + 1] - path[i]
+            let u = simd_normalize(incoming), v = simd_normalize(outgoing)
+            let cosine = simd_dot(u, v)
+            guard cosine > -0.9999 else { return nil }
+            let angle = acos(min(1, cosine))
+            let trim = radius * tan(angle / 2)
+            guard previousTrim + trim <= simd_length(incoming) + 0.0001,
+                  trim <= simd_length(outgoing) + 0.0001 else { return nil }
+            let axis = simd_normalize(simd_cross(u, v))
+            let radial = -simd_cross(axis, u) * radius
+            let center = path[i] - u * trim - radial
+            arcs.append((0...segmentsPerBend).map { sample in
+                center + simd_quatf(angle: angle * Float(sample) / Float(segmentsPerBend), axis: axis).act(radial)
+            })
+            previousTrim = trim
+        }
+        return arcs.flatMap { $0 } + [path[path.count - 1]]
     }
 
     static func triangulate(_ polygon: [SIMD2<Float>]) throws -> [Int32] {
@@ -264,16 +435,216 @@ nonisolated enum LabLayoutPlanner {
                 if selected.allSatisfy({ $0.rect.distance(to: rect) >= 0.8 }) { selected.append((kind, rect, size)) }
             }
         }
-        let yaw = atan2(-u.y, u.x)
+        let axisYaw = atan2(-u.y, u.x)
         let placements = selected.enumerated().map { index, item in
             let p = world(item.rect.center)
             return LabPlacement(id: "\(item.kind.rawValue)-\(index + 1)", kind: item.kind,
                 title: item.kind == .rack ? "Rack genérico \(index + 1)" : "Puesto de trabajo \(index + 1)",
-                position: SIMD3(p.x, floor.height, p.y), yaw: yaw, size: item.size)
+                position: SIMD3(p.x, floor.height, p.y),
+                yaw: axisYaw + (item.rect.center.y < centerV ? .pi : 0), size: item.size)
         }
         if !placements.contains(where: { $0.kind == .rack }) { warnings.append("No cabe un rack con separaciones suficientes.") }
         if !placements.contains(where: { $0.kind == .workstation }) { warnings.append("No cabe un puesto con separaciones suficientes.") }
         return LabLayout(area: area, floorHeight: floor.height, floorPolygon: polygon,
                          placements: placements, warnings: warnings)
+    }
+}
+
+nonisolated enum LabMonitorMount {
+    static let displayWidth: Float = 0.310
+    static let displayHeight: Float = 0.1744
+    static let sideOffset: Float = 0.240
+    static let inset: Float = 0.028
+    static let bezel: Float = 0.018
+
+    static func centerX(for rackWidth: Float, side: Float) -> Float {
+        side * (rackWidth / 2 + sideOffset)
+    }
+}
+
+nonisolated struct LabWalkPose: Equatable {
+    var position: SIMD3<Float>
+    var yaw: Float
+    var pitch: Float = -0.14
+
+    var rotation: simd_quatf {
+        simd_quatf(angle: yaw, axis: SIMD3(0, 1, 0)) * simd_quatf(angle: pitch, axis: SIMD3(1, 0, 0))
+    }
+
+    static func start(in layout: LabLayout) -> Self {
+        let floor = layout.floorPolygon
+        let center = floor.reduce(.zero, +) / Float(max(1, floor.count))
+        if let rack = layout.placements.first(where: { $0.kind == .rack }) {
+            for gap: Float in [1.6, 1.15, 0.75, 0.35] {
+                let front = SIMD2(-sin(rack.yaw), -cos(rack.yaw))
+                let point = SIMD2(rack.position.x, rack.position.z) + front * (rack.size.z / 2 + gap)
+                if permits(point, in: layout) {
+                    let pitch = atan2(rack.size.y * 0.55 - 1.58, rack.size.z / 2 + gap)
+                    return .init(position: SIMD3(point.x, layout.floorHeight + 1.58, point.y), yaw: rack.yaw + .pi, pitch: pitch)
+                }
+            }
+        }
+        // Interior triangle centers work even when a concave room's centroid is outside.
+        let triangles = (try? LabGeometry.triangulate(floor)) ?? []
+        let candidates = [center] + stride(from: 0, to: triangles.count, by: 3).map { i in
+            (floor[Int(triangles[i])] + floor[Int(triangles[i + 1])] + floor[Int(triangles[i + 2])]) / 3
+        }
+        let point = candidates.first { permits($0, in: layout) } ?? candidates.first { LabGeometry.contains($0, polygon: floor) } ?? center
+        return .init(position: SIMD3(point.x, layout.floorHeight + 1.58, point.y), yaw: 0)
+    }
+
+    func inspecting(_ point: SIMD3<Float>, fromSide normal: SIMD3<Float>, in layout: LabLayout) -> Self {
+        let facing = SIMD2(normal.x, normal.z)
+        guard simd_length_squared(facing) > 0.01 else { return aimed(at: point) }
+        let outward = simd_normalize(facing)
+        let across = SIMD2(-outward.y, outward.x)
+        let target = SIMD2(point.x, point.z)
+        let eye = min(layout.floorHeight + 1.58, max(layout.floorHeight + 0.92, point.y + 0.22))
+        for distance: Float in [0.95, 1.25, 1.65, 0.65, 2.25] {
+            for offset: Float in [0, 0.26, -0.26, 0.60, -0.60] {
+                let candidate = target + outward * distance + across * offset
+                guard Self.permits(candidate, in: layout),
+                      LabGeometry.traySpanFits(from: candidate, to: target, within: layout.floorPolygon) else { continue }
+                return Self(position: SIMD3(candidate.x, eye, candidate.y), yaw: yaw).aimed(at: point)
+            }
+        }
+        return aimed(at: point)
+    }
+
+    func aimed(at target: SIMD3<Float>) -> Self {
+        let delta = target - position
+        let horizontal = simd_length(SIMD2(delta.x, delta.z))
+        guard horizontal > 0.001 else { return self }
+        return .init(position: position, yaw: atan2(-delta.x, -delta.z),
+                     pitch: min(1.35, max(-1.35, atan2(delta.y, horizontal))))
+    }
+
+    mutating func look(horizontal: Float, vertical: Float) {
+        yaw = (yaw + horizontal).truncatingRemainder(dividingBy: 2 * .pi)
+        pitch = min(1.35, max(-1.35, pitch + vertical))
+    }
+
+    mutating func walk(_ axes: SIMD2<Float>, seconds: Float, in layout: LabLayout) {
+        let step = axes * (min(0.05, max(0, seconds)) * 1.35 / max(1, simd_length(axes)))
+        let delta = SIMD2(cos(yaw), -sin(yaw)) * step.x + SIMD2(-sin(yaw), -cos(yaw)) * step.y
+        let x = SIMD2(position.x + delta.x, position.z)
+        if Self.permits(x, in: layout) { position.x = x.x }
+        let z = SIMD2(position.x, position.z + delta.y)
+        if Self.permits(z, in: layout) { position.z = z.y }
+    }
+
+    static func canTravel(from a: SIMD3<Float>, to b: SIMD3<Float>, in layout: LabLayout) -> Bool {
+        let first = SIMD2(a.x, a.z), last = SIMD2(b.x, b.z)
+        let steps = max(1, Int(ceil(simd_distance(first, last) / 0.16)))
+        return (0...steps).allSatisfy { permits(first + (last - first) * (Float($0) / Float(steps)), in: layout) }
+    }
+
+    static func permits(_ point: SIMD2<Float>, in layout: LabLayout) -> Bool {
+        let floor = layout.floorPolygon
+        let clearance: Float = 0.15
+        guard LabGeometry.contains(point, polygon: floor),
+              floor.indices.allSatisfy({
+                  LabGeometry.pointDistance(point, floor[$0], floor[($0 + 1) % floor.count]) >= clearance
+              }) else { return false }
+        if layout.placements.contains(where: { placement in
+            let rotation = simd_quatf(angle: -placement.yaw, axis: SIMD3(0, 1, 0))
+            let local = rotation.act(SIMD3(point.x, layout.floorHeight, point.y) - placement.position)
+            let footprint = abs(local.x) < placement.size.x / 2 + clearance && abs(local.z) < placement.size.z / 2 + clearance
+            let sideMonitor = placement.kind == .rack && (layout.facility != nil || placement.id == "home-rack")
+                && abs(abs(local.x) - (placement.size.x / 2 + LabMonitorMount.sideOffset)) < 0.31
+                && abs(local.z + placement.size.z / 2 - LabMonitorMount.inset) < 0.21
+            return footprint || sideMonitor
+        }) { return false }
+        if let facility = layout.facility {
+            let local = simd_quatf(angle: -facility.yaw, axis: SIMD3(0, 1, 0))
+                .act(SIMD3(point.x, layout.floorHeight, point.y) - facility.origin)
+            // The technical enclosure is visible beyond the data hall partition.
+            if local.z < -3.4 && local.z > -5.36 && abs(local.x) < 7.44 { return false }
+            let operatorWall = abs(local.z - 2.67) < 0.21
+                && ((-5.50...4.40).contains(local.x) || (5.60...6.76).contains(local.x))
+            let sideWall = abs(abs(local.x) - 5.17) < 0.21 && (-4.70 ... -1.12).contains(local.z)
+            if operatorWall || sideWall { return false }
+        }
+        return true
+    }
+}
+
+
+nonisolated struct LabTrafficRoute {
+    private struct Span {
+        let from: SIMD3<Float>
+        let to: SIMD3<Float>
+        let start: Float
+        let end: Float
+    }
+
+    private let spans: [Span]
+    let length: Float
+
+    init?(_ cablePaths: [[SIMD3<Float>]]) {
+        var spans: [Span] = []
+        var traveled: Float = 0
+        // Only visible cable contributes distance. A passive panel joins its opposite faces internally.
+        for path in cablePaths {
+            for (from, to) in zip(path, path.dropFirst()) {
+                let distance = simd_distance(from, to)
+                guard distance > 0.0001 else { continue }
+                spans.append(Span(from: from, to: to, start: traveled, end: traveled + distance))
+                traveled += distance
+            }
+        }
+        guard !spans.isEmpty else { return nil }
+        self.spans = spans
+        length = traveled
+    }
+
+    static func markerRadius(cableRadius: Float, depth: Float, projectedPointsAtOneMeter: Float) -> Float {
+        let modelRadius = cableRadius * 1.55
+        guard projectedPointsAtOneMeter > 0 else { return modelRadius }
+        return min(modelRadius, max(0, depth) * 1.8 / projectedPointsAtOneMeter)
+    }
+
+    func point(at fraction: Float) -> SIMD3<Float> {
+        let distance = min(1, max(0, fraction)) * length
+        var lower = 0, upper = spans.count - 1
+        while lower < upper {
+            let middle = (lower + upper) / 2
+            if distance < spans[middle].end { upper = middle }
+            else { lower = middle + 1 }
+        }
+        let span = spans[lower]
+        let t = (distance - span.start) / (span.end - span.start)
+        return simd_mix(span.from, span.to, SIMD3(repeating: t))
+    }
+}
+
+nonisolated struct LabFacilityTrial: Identifiable, Codable, Sendable {
+    enum Scenario: String, Codable, CaseIterable, Sendable {
+        case maintenance = "Mantenimiento de alimentación"
+        case transfer = "Transferencia a grupo electrógeno"
+        case cooling = "Continuidad térmica"
+
+        var system: String {
+            switch self {
+            case .maintenance: "Potencia A/B y UPS"
+            case .transfer: "Generación, UPS y transferencia"
+            case .cooling: "Ventilación y refrigeración A/B"
+            }
+        }
+    }
+
+    var id = UUID()
+    var date = Date()
+    let scenario: Scenario
+    let path: String
+    let loadKW: Double
+    let availableKW: Double
+    let transferSeconds: Double
+    let batteryMinutes: Double
+    let note: String
+
+    var passed: Bool {
+        availableKW >= loadKW
+            && (scenario != .transfer || batteryMinutes * 60 >= transferSeconds)
     }
 }

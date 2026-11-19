@@ -82,32 +82,70 @@ nonisolated enum LabImport {
         return LabProject(room: room, layout: layout, topology: topology)
     }
 
-    static func loadLatest() throws -> LabProject {
-        let url = try lastURL(createDirectory: false)
+    struct Entry: Identifiable, Sendable {
+        let url: URL
+        let name: String
+        let date: Date
+        var id: URL { url }
+    }
+
+    static func history(site: String) throws -> [Entry] {
+        let directory = try library(site: site, create: false)
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
+        let urls = try FileManager.default.fileExists(atPath: directory.path)
+            ? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles])
+            : []
+        var entries = urls.compactMap { file -> Entry? in
+            guard file.lastPathComponent.hasSuffix(".nexus.json"), let values = try? file.resourceValues(forKeys: keys),
+                  values.isRegularFile == true, let date = values.contentModificationDate else { return nil }
+            let name = file.lastPathComponent.dropFirst(37).dropLast(".nexus.json".count)
+            return Entry(url: file, name: String(name), date: date)
+        }.sorted { $0.date > $1.date }
+        if site == "principal" {
+            let legacy = directory.deletingLastPathComponent().appendingPathComponent("last-import.nexus.json")
+            if let values = try? legacy.resourceValues(forKeys: keys), let date = values.contentModificationDate {
+                entries.append(Entry(url: legacy, name: "Importación anterior", date: date))
+                entries.sort { $0.date > $1.date }
+            }
+        }
+        return entries
+    }
+
+    static func loadLatest(site: String = "principal") throws -> LabProject {
+        guard let entry = try history(site: site).first else { throw LabLayoutError.invalid("Este sitio todavía no tiene inventarios guardados.") }
+        return try load(entry)
+    }
+
+    static func load(_ entry: Entry) throws -> LabProject {
+        let url = entry.url
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= maximumBytes else {
-            throw LabLayoutError.invalid("El laboratorio guardado está vacío o supera 8 MiB.")
+            throw LabLayoutError.invalid("El inventario guardado está vacío o supera 8 MiB.")
         }
         return try project(from: Data(contentsOf: url, options: .mappedIfSafe))
     }
 
-    static func save(_ topology: LabTopology) throws -> URL {
+    static func save(_ topology: LabTopology, site: String = "principal") throws -> URL {
         try validateFields(topology)
-        // Run the same distribution/validation as import before replacing the saved laboratory.
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(topology)
+        guard data.count <= maximumBytes else { throw LabLayoutError.invalid("El inventario supera 8 MiB.") }
         _ = try project(from: data)
-        let url = try lastURL(createDirectory: true)
+        let directory = try library(site: site, create: true)
+        let title = String(topology.name.prefix(36)).map { $0.isLetter || $0.isNumber || " -_".contains($0) ? $0 : "_" }
+        let url = directory.appendingPathComponent(UUID().uuidString + "_" + String(title) + ".nexus.json")
         try data.write(to: url, options: .atomic)
         return url
     }
 
-    private static func lastURL(createDirectory: Bool) throws -> URL {
-        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: createDirectory)
-        let directory = documents.appendingPathComponent("Labs", isDirectory: true)
-        if createDirectory { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-        return directory.appendingPathComponent("last-import.nexus.json")
+    private static func library(site: String, create: Bool) throws -> URL {
+        guard site == "principal" || UUID(uuidString: site) != nil else {
+            throw LabLayoutError.invalid("Identificador de sitio inválido.")
+        }
+        let url = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: create)
+            .appendingPathComponent("Labs", isDirectory: true).appendingPathComponent(site, isDirectory: true)
+        if create { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        return url
     }
 
     private static func isWorkstation(_ model: String) -> Bool {

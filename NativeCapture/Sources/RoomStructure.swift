@@ -74,12 +74,21 @@ nonisolated struct RoomStructure: Codable, Sendable {
         return try encoder.encode(self)
     }
 
-    func save() throws -> URL {
-        let data = try jsonData()
+    static func captureDirectory(site: String, create: Bool = false) throws -> URL {
+        guard site == "principal" || UUID(uuidString: site) != nil else {
+            throw CocoaError(.fileReadInvalidFileName)
+        }
         let documents = try FileManager.default.url(
-            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: create)
         let directory = documents.appendingPathComponent("Captures", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let location = site == "principal" ? directory : directory.appendingPathComponent(site, isDirectory: true)
+        if create { try FileManager.default.createDirectory(at: location, withIntermediateDirectories: true) }
+        return location
+    }
+
+    func save(site: String = "principal") throws -> URL {
+        let data = try jsonData()
+        let directory = try Self.captureDirectory(site: site, create: true)
         let url = directory.appendingPathComponent("room-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url

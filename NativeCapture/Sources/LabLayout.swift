@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import simd
 
@@ -464,7 +465,8 @@ nonisolated enum LabMonitorMount {
     }
 
     static func captionFrame(at column: Int) -> CGRect {
-        chartFrame(at: column).offsetBy(dx: 0, dy: 57)
+        let chart = chartFrame(at: column)
+        return CGRect(x: chart.minX, y: chart.maxY + 4, width: chart.width, height: 39)
     }
 
     static func centerX(for rackWidth: Float, side: Float) -> Float {

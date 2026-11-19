@@ -14,6 +14,7 @@ import SwiftUI
         var overrides: [String: LabOperationsOverrides] = [:]
         var history: [String: [Checkpoint]] = [:]
         var faults: [String: Set<String>]? = nil
+        var monitors: [String: [String: LabMonitorConfiguration]]? = nil
     }
 
     private let key = "labPlanOperations.v2"
@@ -55,6 +56,19 @@ import SwiftUI
         if active { failed.insert(device) } else { failed.remove(device) }
         entries[id] = failed
         next.faults = entries
+        try persist(next)
+    }
+
+    func monitors(in base: LabTopology) -> [String: LabMonitorConfiguration] {
+        profile(base).flatMap { state.monitors?[$0] } ?? [:]
+    }
+
+    func setMonitor(_ configuration: LabMonitorConfiguration, for device: String, in base: LabTopology) throws {
+        guard let id = profile(base) else { return }
+        var next = state
+        var profiles = next.monitors ?? [:]
+        profiles[id, default: [:]][device] = configuration
+        next.monitors = profiles
         try persist(next)
     }
 
@@ -323,14 +337,15 @@ private struct LabServerDashboard: View {
     let base: LabTopology
     let locateTitle: String
     let onLocate: ((LabInspectionDestination) -> Void)?
-    @State private var page = 0.0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(LabOperationsStore.self) private var operations
-    @State private var faultError: String?
+    @State private var error: String?
 
     var body: some View {
         let simulatedFaults = operations.faults(in: base)
         let effectivePower = poweredOff.union(simulatedFaults)
-        TimelineView(.periodic(from: .now, by: 2)) { context in
+        let settings = operations.monitors(in: base)[device.id] ?? .init()
+        TimelineView(.periodic(from: .now, by: LabServerSample.interval)) { context in
             let sample = LabServerSample(device: device, topology: topology,
                                          poweredOff: effectivePower, timestamp: context.date)
             List {
@@ -344,8 +359,7 @@ private struct LabServerDashboard: View {
                     }
                     let failed = simulatedFaults.contains(device.id)
                     Button {
-                        do { try operations.setFault(!failed, for: device.id, in: base); faultError = nil }
-                        catch { faultError = error.localizedDescription }
+                        attempt { try operations.setFault(!failed, for: device.id, in: base) }
                     } label: {
                         Label(failed ? "Encender en simulación" : "Apagar en simulación",
                               systemImage: failed ? "power.circle" : "power")
@@ -353,40 +367,53 @@ private struct LabServerDashboard: View {
                             .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("lab.dashboard.power")
-                    if let faultError { Text(faultError).foregroundStyle(.secondary) }
-                    Slider(value: $page, in: 0...2, step: 1) {
-                        Text("Cambiar vista del monitor")
-                    } minimumValueLabel: {
-                        Image(systemName: "gauge.with.dots.needle.33percent")
-                    } maximumValueLabel: {
-                        Image(systemName: "square.stack")
-                    }
-                    .accessibilityIdentifier("lab.dashboard.page")
-                    .accessibilityValue(["Estado", "Red", "Servicios"][Int(page)])
                 } header: {
                     Text("Simulación · Monitor de 14″")
                 }
-                switch Int(page) {
-                case 1:
-                    Section("Red") {
-                        metric("Recepción", sample.receiveMbps, unit: "Mb/s", range: 0...65)
-                        metric("Envío", sample.transmitMbps, unit: "Mb/s", range: 0...65)
-                        LabeledContent("IPv4", value: device.ipv4 ?? "Sin dirección")
-                        if let vlan = device.vlan { LabeledContent("VLAN", value: String(vlan)) }
+
+                Section("Ajustes del monitor") {
+                    Picker("Vista", selection: setting(\.panel)) {
+                        ForEach(LabMonitorConfiguration.Panel.allCases, id: \.self) { Text($0.rawValue) }
                     }
-                case 2:
+                    .accessibilityIdentifier("lab.dashboard.page")
+                    if settings.panel != .services {
+                        Picker("Gráfico", selection: setting(\.chart)) {
+                            ForEach(LabMonitorConfiguration.Chart.allCases, id: \.self) { Text($0.rawValue) }
+                        }
+                        .accessibilityIdentifier("lab.dashboard.chart")
+                    }
+                    if let error { Text(error).foregroundStyle(.secondary) }
+                }
+                .pickerStyle(.navigationLink)
+
+                if settings.panel == .services {
                     Section("Servicios asignados") {
-                        ForEach(device.services, id: \.self) { service in
+                        if device.services.isEmpty && (device.siteHosts ?? []).isEmpty {
+                            Text("Sin servicios asignados").foregroundStyle(.secondary)
+                        }
+                        ForEach(Array(device.services.enumerated()), id: \.offset) { _, service in
                             LabeledContent(service, value: sample.state.rawValue)
                         }
                         ForEach(device.siteHosts ?? [], id: \.self) { Text($0).font(.callout.monospaced()) }
                     }
-                default:
-                    Section("Estado") {
-                        metric("CPU", sample.cpu, unit: "%", range: 0...100)
-                        metric("Memoria", sample.memory, unit: "%", range: 0...100)
-                        LabeledContent("Entrada", value: rate(sample.receiveMbps))
-                        LabeledContent("Salida", value: rate(sample.transmitMbps))
+                } else {
+                    Section(settings.panel.rawValue) {
+                        let layout = dynamicTypeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(spacing: 16))
+                            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+                        layout {
+                            ForEach(settings.panel.metrics, id: \.self) { metric in
+                                metricCard(metric, value: metric.value(in: sample), rings: settings.usesRings)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        if settings.panel == .network {
+                            LabeledContent("IPv4", value: device.ipv4 ?? "Sin dirección")
+                            if let vlan = device.vlan { LabeledContent("VLAN", value: String(vlan)) }
+                        } else {
+                            LabeledContent("Entrada", value: LabMonitorConfiguration.Metric.receive.formatted(sample.receiveMbps))
+                            LabeledContent("Salida", value: LabMonitorConfiguration.Metric.transmit.formatted(sample.transmitMbps))
+                        }
                     }
                 }
                 Section {
@@ -402,21 +429,70 @@ private struct LabServerDashboard: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func metric(_ name: String, _ value: Double, unit: String, range: ClosedRange<Double>) -> some View {
-        Gauge(value: value, in: range) {
-            Text(name)
-        } currentValueLabel: {
-            Text("\(value.formatted(.number.precision(.fractionLength(1)))) \(unit)").monospacedDigit()
+    private func setting<Value>(_ keyPath: WritableKeyPath<LabMonitorConfiguration, Value>) -> Binding<Value> {
+        Binding {
+            (operations.monitors(in: base)[device.id] ?? .init())[keyPath: keyPath]
+        } set: { value in
+            var settings = operations.monitors(in: base)[device.id] ?? .init()
+            settings[keyPath: keyPath] = value
+            attempt { try operations.setMonitor(settings, for: device.id, in: base) }
         }
-        .tint(.blue)
     }
 
-    private func rate(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(1))) + " Mb/s" }
+    private func attempt(_ action: () throws -> Void) {
+        do { try action(); error = nil }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func metricCard(_ metric: LabMonitorConfiguration.Metric, value: Double, rings: Bool) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                LabMonitorChart(rings: rings, fraction: 1).fill(.secondary.opacity(0.22))
+                LabMonitorChart(rings: rings, fraction: value / metric.maximum).fill(.tint)
+            }
+            .frame(width: 64, height: 64)
+            .accessibilityHidden(true)
+            Text(metric.rawValue)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(metric.formatted(value))
+                .font(.title3.weight(.semibold).monospacedDigit())
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lab.dashboard.metric." + metric.rawValue)
+    }
+
     private func report(_ sample: LabServerSample) -> String {
-        ([device.name, "Nexus AR · Ficha simulada", sample.state.rawValue, sample.timestamp.ISO8601Format(),
+        let receive = LabMonitorConfiguration.Metric.receive.formatted(sample.receiveMbps)
+        let transmit = LabMonitorConfiguration.Metric.transmit.formatted(sample.transmitMbps)
+        return ([device.name, "Nexus AR · Ficha simulada", sample.state.rawValue, sample.timestamp.ISO8601Format(),
           "IPv4 \(device.ipv4 ?? "—")", "VLAN \(device.vlan.map(String.init) ?? "—")",
-          "RX \(rate(sample.receiveMbps)) · TX \(rate(sample.transmitMbps))", device.services.joined(separator: ", ")]
+          "RX \(receive) · TX \(transmit)", device.services.joined(separator: ", ")]
          + (device.siteHosts ?? []) + [device.configuration ?? ""]).joined(separator: "\n")
+    }
+}
+
+nonisolated struct LabMonitorChart: Shape {
+    let rings: Bool
+    let fraction: Double
+
+    func path(in rect: CGRect) -> Path {
+        let fraction = min(1, max(0, fraction))
+        guard fraction > 0 else { return Path() }
+        let size = min(rect.width, rect.height)
+        if rings {
+            let lineWidth = size * 0.15
+            var path = Path()
+            path.addRelativeArc(center: CGPoint(x: rect.midX, y: rect.midY), radius: (size - lineWidth) / 2,
+                                startAngle: .degrees(-90), delta: .degrees(360 * fraction))
+            return path.strokedPath(StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+        }
+        let width = size * 0.44
+        let height = rect.height * fraction
+        return Path(roundedRect: CGRect(x: rect.midX - width / 2, y: rect.maxY - height, width: width, height: height),
+                    cornerRadius: min(size * 0.10, height / 2))
     }
 }
 

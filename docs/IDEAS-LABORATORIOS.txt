@@ -1,0 +1,25 @@
+Nexus AR · Ideas para Tier IV y HomeLab
+
+1. Estado simulado de los servicios — implementado
+   Monitores en escena y vista de detalle para CPU, memoria, entrada, salida y servicios. Los estados de energía y enlace se calculan desde el plano. Las muestras muestran hora de lectura.
+
+2. Inventario físico
+   Importar mediciones del sitio y modelos CAD por equipo, con profundidad de montaje, alcance de puerta y espacio de servicio. Añadir un segundo HomeLab con equipamiento compacto, switch Gigabit y PoE certificado para la carga instalada.
+
+3. Mapa de domótica
+   Colocar sensores y actuadores en el plano AR. Seleccionar un sensor para recorrer evento, regla y actuador. Mostrar ejecución y prueba manual en Home Assistant con sus permisos.
+
+4. Red y cables — implementado
+   CSV del mismo trayecto usado para renderizar. Consola con resolución de dominios del plano, pruebas de política entre VLAN y diagnóstico ante puertos deshabilitados.
+
+5. Puesto de operación — implementado
+   Historial con diferencias y deshacer. Fichas de servidor exportables. Biblioteca de inventarios y configuración por sitio.
+
+6. Copias y grabaciones
+   Añadir verificación programada, cuota y retención por volumen. Restaurar periódicamente una VM y un archivo. Registrar tiempo de restauración y desfase de la copia con su objetivo.
+
+7. Control de realidad aumentada — implementado
+   Punto de referencia persistente por sitio y escala, recalibración sobre la sesión existente y oclusión con la malla LiDAR. Pendiente la comprobación de relocalización y legibilidad en movimiento con el iPhone.
+
+8. Validación de infraestructura — implementado en la plantilla
+   Generadores exteriores A/B, más módulos de energía y fichas simuladas de potencia, transferencia y continuidad térmica con carga y capacidad configurables.

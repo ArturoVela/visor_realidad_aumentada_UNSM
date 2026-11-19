@@ -42,8 +42,13 @@ estas imágenes no representan una captura física con LiDAR ni validan AR sobre
   <img src="docs/images/laboratorio-3d.png" width="310" alt="Sala de servidores en 3D: seis racks, dos puestos y conexiones entre equipos">
 </p>
 
-La demo representa una sala de **16 × 12 × 3,5 m**, con **192 m²**, **6 racks**,
-**2 puestos**, **34 equipos**, **44 enlaces** y **5 VLAN**.
+La **Plantilla Tier IV** usa una sala de ejemplo de **16 × 12 × 3,5 m**. Incluye seis racks de TI,
+dos gabinetes de UPS/baterías, cuatro unidades InRow, tres puestos de operación, 46 equipos activos y 70 circuitos de red. Los patch panels desglosan los circuitos en tramos físicos. Muestra tableros, PDU, fuentes dobles y rutas eléctricas A/B.
+
+**HomeLab Proxmox** incluye un rack de 18 U, Proxmox, NAS, copias, UPS, router, switch,
+Wi-Fi, videovigilancia y dos Raspberry Pi para DNS y domótica. Se coloca a escala real
+en el piso o se ajusta a un escaneo. La [guía de operación](Tools/Operations/README.md)
+cubre montaje, VLAN, servicios y automatizaciones.
 
 ## Qué puedes hacer
 
@@ -51,16 +56,17 @@ La demo representa una sala de **16 × 12 × 3,5 m**, con **192 m²**, **6 racks
 | --- | --- |
 | Escanear tu cuarto | Captura estructura, guarda el resultado y distribuye hasta seis racks y dos puestos cuando caben. |
 | Explorar en 3D | Gira, acerca, restablece la cámara y enfoca un equipo al inspeccionarlo. |
-| Usar AR del cuarto | Conserva el origen de la sesión de captura y representa el laboratorio a escala 1:1. |
+| Recorrer tu cuarto en AR | Camina con la cámara activa. El plano muestra tu posición y el laboratorio permanece a escala 1:1. |
 | Colocar una maqueta | Demo e importaciones ofrecen AR 1:10: apunta a una superficie y toca para colocarla. |
 | Inspeccionar la red | Consulta equipos, puertos, extremos, IPv4, VLAN y configuración importada disponible. |
-| Identificar cables | Cobre azul y fibra naranja, con conectores, codos y selección de enlaces. |
+| Seguir un cable | Apunta a un cable o puerto y pulsa **¿Adónde va?**. El visor resalta el recorrido y muestra equipo, puerto y rack de ambos extremos. |
+| Recorrer en primera persona | Camina en 3D con el control de movimiento. Modo VR en el teléfono vertical u horizontal, con vista estereoscópica opcional en horizontal. |
 | Importar Packet Tracer | Convierte .pkt a .nexus.json en Mac e importa el archivo desde el iPhone. |
 | Recuperar tu trabajo | Guarda datos localmente y restaura el laboratorio activo en 3D al abrir la app. |
 
-SMTP/IMAP, DNS, HTTP, aplicaciones, backup y monitorización son **roles descriptivos**.
-Encender o apagar equipos cambia indicadores y pantallas; los cables dibujados no demuestran
-conectividad calculada.
+Las PCs y laptops abren una consola del plano y el inventario de 38 dominios. Los comandos
+guardan cambios por plantilla y comprueban caminos en la VLAN. Las herramientas de Mac y Linux
+preparan carpetas NAS, copias verificables y grabación RTSP. [Guía de operación](Tools/Operations/README.md)
 
 ## Instalación
 
@@ -152,20 +158,21 @@ Unity no es necesario para ejecutar la app iPhone y no renderiza su vista móvil
 
 1. Pulsa **Escanear** y recorre paredes, suelo y accesos.
 2. Pulsa **Terminar y generar**. La estructura se guarda antes de calcular la distribución.
-3. Explora el resultado en **Cuarto 3D** o AR 1:1 con la sesión del escaneo.
-4. Toca un equipo o cable para inspeccionarlo. También puedes usar **Más opciones → Red y conexiones**.
+3. En **Recorrer en AR**, camina con la cámara y consulta tu posición en el plano. Recorre la sala hasta guardar su referencia AR.
+4. Apunta a un cable o puerto y pulsa **¿Adónde va?** para seguirlo. Toca un equipo para abrir su ficha.
+5. Al volver al cuarto, abre **Recorrer en AR** y apunta a las mismas zonas hasta recuperar la posición.
 
-### Sala virtual → maqueta
+### Plantilla Tier IV → maqueta o cuarto real
 
-1. Abre **Más opciones → Sala de servidores de prueba**.
-2. Explora racks, puestos y cableado en **Cuarto 3D**.
-3. En un dispositivo compatible, elige **Maqueta AR 1:10**, apunta a una superficie y toca para colocarla.
+1. Abre **Más opciones → Plantillas → Plantilla Tier IV** para explorar racks, energía y climatización. En **Plantillas**, **Infraestructura y pruebas** abre el inventario y la comprobación de camino de los tres PCs.
+2. Escanea desde la plantilla o elige **Cuarto y archivos → Aplicar plantilla al cuarto** si ya tienes un escaneo. Se necesita un área libre de 14,6 × 10,8 m con margen a paredes, 3,1 m de altura y una abertura reconocida hacia operación. La app preserva las dimensiones del equipo y mantiene el escaneo si la plantilla no cabe.
+3. En el cuarto aplicado, **Recorrer en AR** conserva las paredes y el suelo reconstruidos en tono gris. Desde la sala virtual sigue disponible **Maqueta AR 1:10** para visualizar el conjunto a pequeña escala.
 
 ### Packet Tracer → laboratorio importado
 
 1. Convierte tu .pkt con el exportador Mac, por CLI o interfaz gráfica.
 2. Transfiere el .nexus.json al iPhone, por ejemplo mediante AirDrop.
-3. Abre **Más opciones → Importar topología exportada** y selecciona el archivo.
+3. Abre **Más opciones → Cuarto y archivos → Importar topología exportada** y selecciona el archivo.
 
 La app valida los datos y genera una sala virtual. Las coordenadas del lienzo de Packet Tracer
 no se interpretan como dimensiones reales de tu cuarto. Conserva modelos, interfaces y
@@ -253,8 +260,12 @@ siguen pendientes; consulta la [documentación nativa](NativeCapture/README.md) 
   geometrías curvas, inclinadas o incompletas pueden producir avisos o errores.
 - **Distribución:** heurística determinista, no certificación de una instalación. El blanco superpuesto
   puede ocultar muebles en pantalla que siguen físicamente presentes.
-- **AR al reiniciar:** se recupera la vista 3D, sin mapas AR persistentes. AR 1:1 requiere un nuevo
-  escaneo; la maqueta debe colocarse otra vez.
+- **AR al reiniciar:** abre el cuarto guardado en 3D y elige **Recorrer en AR**. El iPhone recupera el
+  origen si guardó un mapa y reconoce el cuarto. Escaneos anteriores sin mapa requieren capturar de nuevo.
+- **Cableado 3D:** las rutas ilustran el diseño de red. Los enlaces sin una ruta de bandeja válida
+  permanecen disponibles en **Red y conexiones**.
+- **Modo VR:** la vista para gafas divide la escena por ojo en horizontal. En ambos formatos se
+  avanza con el control de movimiento y se puede cambiar la mirada por gesto o con el sensor del teléfono.
 - **Importación:** hasta 8 MiB de JSON, 96 equipos, 192 enlaces, 64 VLAN, 12 racks y 24 puestos.
   El conversor limita .pkt a 16 MiB y XML descomprimido a 32 MiB. Modelos o medios no admitidos,
   actividades .pka y evaluaciones producen error.
@@ -279,3 +290,5 @@ Python no se incorporan al ejecutable iPhone.
 
 El resto del repositorio no declara una licencia general de reutilización. Las marcas y nombres
 de productos pertenecen a sus respectivos titulares; este proyecto no está afiliado a Cisco ni Dell.
+
+[Ideas para el visor y los laboratorios](docs/IDEAS-LABORATORIOS.txt)

@@ -8,12 +8,14 @@ educativa como instalación real ni red funcionando.
 
 | Entrada | Acciones | Resultado |
 | --- | --- | --- |
-| Mi cuarto | Escanear→Terminar y generar | Blanco/equipos; AR 1:1 tras captura nueva |
-| Sala de prueba | Más opciones→Sala de servidores de prueba | 192 m², seis racks/dos puestos |
-| Packet Tracer | Exportador Mac→AirDrop→Importar topología exportada | Sala sintética con datos del proyecto |
+| Mi cuarto | Escanear→Terminar y generar | Recorrido AR 1:1 con cámara, posición en plano y mira |
+| Plantillas | Más opciones → Plantillas → HomeLab Proxmox o Plantilla Tier IV | Rack y puestos del HomeLab, o sala Tier IV con energía y refrigeración A/B |
+| Aplicar al cuarto | Escanear desde la plantilla o Más opciones → Cuarto y archivos → Aplicar plantilla al cuarto | Encaje 1:1 sobre el contorno medido |
+| Packet Tracer | Exportador Mac → AirDrop → Más opciones → Cuarto y archivos → Importar topología exportada | Sala sintética con datos del proyecto |
 
 Escanear no requiere Mac. Guardar estructura antes de distribuir conserva el escaneo ante fallo.
-Al reiniciar se restaura en 3D el laboratorio activo; AR 1:1 necesita nuevo escaneo.
+Al reiniciar se restaura en 3D el laboratorio activo. **Recorrer en AR** recupera el origen si se
+guardó el mapa y el iPhone reconoce el mismo cuarto.
 Demo/importaciones ofrecen Maqueta AR 1:10: apuntar a superficie y tocar para colocar.
 
 En 3D se gira y acerca la vista con gestos, +/− y restablecimiento; inspeccionar enfoca el equipo.
@@ -28,15 +30,15 @@ Puertos originales PT se conservan como alias de conectores visuales. Fuentes of
 especificaciones de geometría aproximada.
 
 Cobre azul/fibra naranja se distinguen también por nombre y ficha. Cables con conectores y codos;
-selección muestra equipos, puertos y VLAN. **Red y conexiones** ofrece esos datos en lista;
-**Mostrar cables** controla visibilidad. **Elementos colocados** permite abrir racks/puestos
-sin acertar sobre hardware pequeño.
+selección muestra equipos, puertos y VLAN. **Red y conexiones** reúne esos datos y el control
+**Mostrar cables**. En **Equipos**, **Equipos disponibles** agrupa los modelos por familia y
+**Elementos de la escena** abre los racks, puestos y sus dispositivos instalados.
 
 Encendido modifica indicadores/pantallas. DNS, SMTP/IMAP, HTTP, aplicaciones, backup y monitorización
-son descripciones. No se promete tráfico, comandos ni Cisco IOS; configuración importada es texto
-y nunca se ejecuta.
+son roles del plano. La consola de las plantillas permite inspeccionar y guardar cambios
+locales. La configuración importada sigue disponible como texto.
 
-Demo: 34 equipos, 44 enlaces y cinco VLAN. **Criterios Tier IV** explica mantenibilidad concurrente,
+La sala incluye 46 equipos activos, 70 circuitos, patch panels y siete VLAN. **Infraestructura y pruebas** explica mantenibilidad concurrente,
 tolerancia a fallos, aislamiento físico y refrigeración continua, con
 [fuente Uptime Institute](https://uptimeinstitute.com/tiers). No presenta certificación ni 16×12 m
 como norma de construcción.

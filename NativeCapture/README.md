@@ -18,35 +18,89 @@ Abrir NexusRoomCapture.xcodeproj, elegir equipo propio en Signing & Capabilities
 iPhone compatible con RoomPlan. La captura solicita permiso de cámara.
 
 - **Escanear→Terminar y generar:** guarda estructura y genera hasta seis racks/dos puestos según
-  suelo, altura y accesos. Captura nueva abre AR 1:1 con su sesión conservada.
-- **Sala de servidores de prueba:** desde Más opciones. 16×12×3,5 m, 192 m², seis racks/dos puestos,
-  34 equipos/44 enlaces, VLAN 10/20/30/40/50. Sala sintética independiente del cuarto.
-- **Importar topología exportada:** selecciona .nexus.json convertido en Mac; valida y redistribuye.
-  Coordenadas PT no se usan como medidas reales.
+  suelo, altura y accesos. Captura nueva abre **Recorrer en AR** a escala 1:1 con la cámara activa.
+  El plano muestra posición y dirección. Al apuntar a un cable o puerto conectado, pulsa **¿Adónde va?**
+  para resaltar la ruta y ver equipo, puerto y ubicación de cada extremo.
+- **Plantilla Tier IV:** sala virtual de 16×12×3,5 m, seis racks de TI, dos gabinetes de UPS y baterías,
+  cuatro unidades InRow y tres puestos de operación. **Aplicar plantilla al cuarto** conserva la escala
+  física si el contorno, altura y acceso medidos admiten la distribución.
+- **Recorrer mi cuarto en AR:** desde la plantilla, aplica un escaneo con referencia AR o inicia uno nuevo.
+  Espera **Anclado al cuarto · 1:1** y camina para ver los equipos desde ángulos distintos. Los controles,
+  la mira y la ficha del cable se superponen a la cámara sin cambiar su encuadre. Si se pierde la posición,
+  apunta a zonas reconocibles del escaneo o usa **Volver a alinear el cuarto** si el mapa está guardado.
+- En **Cuarto y archivos → Importar topología exportada**, elige el .nexus.json convertido en Mac.
+  La app valida y redistribuye los equipos mientras muestra el progreso. Las coordenadas de
+  Packet Tracer se descartan al calcular la distribución.
 - **Cuarto 3D:** girar, acercar con gestos o +/−, enfocar al inspeccionar y restablecer.
   Muros cortados visualmente a 0,65 m; archivo/AR
   conservan altura original.
-- **Maqueta AR 1:10:** demo/importación; apuntar a superficie y tocar para colocar. Sesión propia,
-  sin escaneo previo necesario.
+- **Escala AR:** HomeLab y Plantilla Tier IV ofrecen 1:1, 1:2, 1:5, 1:10 y 1:20. Abre **Escala** en
+  la vista 3D o antes de tocar para colocar. Cada opción muestra ancho, fondo, alto y superficie
+  de la sala virtual. Una vez colocado, usa **Volver a colocar modelo** para elegir otra escala.
+  Si abriste la plantilla sobre un escaneo, **Configurar maqueta AR** abre la vista independiente.
+  Las importaciones mantienen su maqueta AR a 1:10.
+- **Recorrido 3D:** desplázate con el control circular y arrastra la escena para mirar.
+- En **Más opciones → Vista y recorrido**, **Modo VR** ofrece vista de una pantalla en vertical
+  y horizontal y vista opcional para gafas en horizontal. Activa el control de movimiento del iPhone para orientar la mirada.
+- **HomeLab Proxmox:** abre **Montar HomeLab** para colocar el rack a escala 1:1 en el piso, ajustar
+  la planta a un cuarto escaneado o consultar la guía. [Servicios, NAS, NVR y automatizaciones](../Tools/Operations/README.md).
+- **Operación desde el visor.** Toca una PC, su pantalla o la laptop para abrir la consola del plano.
+  **Sitios** muestra 38 dominios asignados. La consola guarda nombres, IPv4, estado de puertos y destino de sitios por plantilla.
 
-Tocar equipo/cable abre datos. **Red y conexiones**/**Elementos colocados** ofrecen acceso en lista.
-Cobre azul/fibra naranja con conectores y codos; fichas de extremos, IPv4, VLAN, servicios y
-configuración importada. Encendido sólo modifica indicadores/pantallas.
+**Fijar equipo** está en el recorrido de una pantalla y en AR. Su menú permite elegir por mira
+o por proximidad. Las flechas recorren los equipos según su orden en el rack y en la sala.
+En AR se conserva el seguimiento del iPhone. En el recorrido 3D, la vista gira hacia el equipo
+desde la posición actual y un arrastre devuelve el control de la mirada.
 
-SMTP/IMAP, DNS, HTTP, aplicaciones, backup y monitorización son descriptivos. Sin ejecución Cisco IOS,
-CLI, VLAN, routing, paquetes o servicios. Cables dibujados no prueban conectividad calculada.
+**Flujo simulado** representa ida en verde y retorno en naranja. Las luces verdes junto a los
+puertos representan enlace, y las naranjas, actividad del ejemplo. La escena limita cuántos
+circuitos anima simultáneamente y prioriza el trazado o el equipo fijado. Reducir movimiento
+muestra el flujo en posiciones fijas. El menú permite apagar los pulsos.
+
+Al abrir **Recorrido 3D**, la leyenda muestra los colores del cableado presente, el resaltado
+y las dos direcciones del flujo. Pulsa **Entrar al recorrido** y toca el encabezado para
+consultarla de nuevo. Los pulsos respetan el
+grosor del cable y limitan su tamaño proyectado cuando te acercas. En una ficha de conexión,
+toca un extremo o uno de los puertos de un tramo para encuadrarlo desde su lado y conservar
+el circuito resaltado. La ficha de equipo también permite volver a su ubicación en la escena.
+
+Tocar un equipo abre su ficha. En **Más opciones → Equipos**, **Equipos disponibles** muestra el
+catálogo por familia y **Elementos de la escena** abre los racks, puestos y sus dispositivos.
+Racks de 42 U con rieles, equipos montados y bandeja para el firewall de sobremesa. Los modelos se
+generan con geometría y materiales propios a partir de referencias de catálogo. Cobre azul y fibra
+naranja salen de sus puertos hacia guías interiores y bandejas. Fichas de extremos, IPv4, VLAN,
+servicios y configuración importada. Encendido sólo modifica indicadores/pantallas.
+
+La plantilla calcula el camino de los tres PCs al servidor LAB en VLAN 20. El servicio HTTP y los
+clientes se ejecutan fuera de iOS. [Red de pruebas](../Tools/TierLab/README.md)
+
+## Monitores y pruebas de las plantillas
+
+- **Monitores de 14 pulgadas.** Cada servidor de las plantillas tiene una pantalla con base anclada al suelo, poste lateral, brazo articulado y placa VESA. Tócala o elige **Monitores de servidores** desde el menú de red, o desde **Ajustes de fijación** en el recorrido. El deslizador cambia entre estado, red y servicios. El apagado simulado afecta al tráfico y a los caminos de red.
+- **Encuadre frontal.** En recorrido 3D y VR, fija un equipo y usa las flechas para moverte al próximo frente despejado. La inspección de un puerto conserva su lado físico. En AR la cámara se mueve contigo.
+- **Red.** Tier IV cuenta con un par de firewalls de borde y otro de segmentación. En consola prueba `test <equipo> <puerto>` y `resolve <dominio>`. **Red y conexiones** exporta el CSV de los tramos con etiqueta, VLAN, extremos, largo y radio del modelo.
+- **Sitios.** Desde **Cuarto y archivos → Sitios e inventarios** crea sitios y reabre importaciones. Los escaneos se guardan por sitio. El historial de configuración guarda hasta 20 cambios por plantilla y sitio. Puedes deshacer el último y exportar la ficha desde el monitor.
+- **Referencia AR.** HomeLab y Tier IV guardan el punto de colocación por sitio y escala en un mapa AR. **Recalibrar punto de referencia** permite volver a marcar el piso. En iPhone con LiDAR, **Oclusión con espacio real** usa la malla de ARKit.
+- **Infraestructura.** Generación exterior A/B en la sala virtual, módulos UPS y baterías, refrigeración en fila y bandejas. **Infraestructura y pruebas** registra escenarios simulados de mantenimiento, transferencia y continuidad térmica.
 
 ## Sesiones y persistencia
 
 - CaptureController conserva sesión RoomCaptureView al terminar con stop(pauseARSession: false).
   RealityKit reutiliza coordenadas nativas para AR 1:1.
-- Demo/importación: ARWorldTrackingConfiguration independiente, escala de escena 0,1.
-- Sin ARWorldMap ni anclajes persistidos. Reinicio restaura 3D: AR del cuarto necesita nuevo
-  escaneo; maqueta nueva colocación.
+- Maquetas e importaciones usan una sesión ARWorldTrackingConfiguration independiente del escaneo.
+- El mapa ARKit se guarda por ID de cuarto cuando hay suficiente seguimiento. Vive en Application
+  Support/RoomWorldMaps con protección de archivos, fuera de la copia de seguridad y del JSON compartido.
+  Tras reiniciar, abre **Recorrer en AR** en el mismo cuarto. El modelo aparece cuando ARKit recupera el origen.
+  Capturas anteriores sin mapa requieren un escaneo nuevo. Las maquetas requieren nueva colocación.
+  El HomeLab colocado en el piso guarda un mapa propio con su ancla 1:1. Volver al mismo sitio
+  requiere que ARKit reconozca la ubicación nuevamente.
+- Para verificar el recorrido físico en Debug, Library/Caches/NexusWalkthrough.json registra la máxima
+  distancia del teléfono y del anclaje desde la primera muestra del recorrido 1:1 de la plantilla.
+  El archivo local contiene la hora y distancias relativas. El simulador verifica el visor 3D y el encaje.
 - Documentos/Captures: estructuras atómicas con nombre único, guardadas antes de planificar.
   Fallo de distribución conserva escaneo compartible; cancelar conserva capturas anteriores.
 - Documentos/Labs/last-import.nexus.json: última importación validada, escrita atómicamente.
-- activeLaboratory: cuarto/demo/importación; demo regenerada e importación redistribuida al restaurar.
+- activeLaboratory: escaneo, plantillas o importación. HomeLab ajustado al escaneo se reconstruye con el contorno guardado.
 - Documentos/Diagnostics/capture-status.json: permisos, fase, configuración, frame, seguimiento,
   tamaño del preview. Sin fotografías ni coordenadas del cuarto.
 
@@ -114,7 +168,10 @@ RoomPlan estima medidas. Sin editor manual ni optimización total. Curvas, suelo
 capturas incompletas pueden generar errores/avisos; no se completan muros o accesos ausentes.
 El blanco puede ocultar muebles en pantalla que siguen físicamente presentes.
 
-Demo ilustra A/B sin PDU o fuentes inventadas.
+La infraestructura dibuja PDU, doble fuente y ATS de referencia, y aplica radios de modelo de 32 mm
+para cobre y 40 mm para fibra. Para construir, valida el radio del producto seleccionado, los
+pasamuros, soportes y separación según el proyecto, además de cargas y pruebas de fallo. Los
+generadores, combustible y condensadores requieren levantamiento exterior y dimensionamiento.
 [Tier IV](https://uptimeinstitute.com/tiers): mantenibilidad concurrente, tolerancia a fallos,
 aislamiento físico y refrigeración continua; sin diseño constructivo ni certificación.
 16×12 m es ejemplo, no norma. Fuentes en [HardwareCatalog.swift](Sources/HardwareCatalog.swift);

@@ -26,7 +26,8 @@ recuerda scan/demo/imported; al restaurar se abre en 3D.
 | LabLayout.swift | Geometría, triangulación y distribución del cuarto |
 | LabTopology.swift | Dispositivos, enlaces, VLAN, validación y fábricas |
 | LabImport.swift | Límites de entrada, nueva distribución y persistencia |
-| LabScene.swift | Modelos RealityKit, cámaras, selección, cables y colocación AR |
+| LabScene.swift | Modelos RealityKit, cámaras, selección, rutas por guías/bandejas y seguimiento AR |
+| LabStereoView.swift | Vista virtual por ojo y orientación con el giroscopio del iPhone |
 | TopologyInspector.swift | Instancias, enlaces, datos de red y criterios Tier IV |
 | HardwareCatalog.swift | Diez referencias y fuentes oficiales |
 | Tools/PacketTracerExporter/ | Conversor .pkt Python y GUI AppKit independiente |
@@ -42,13 +43,14 @@ Sin mobiliario ni fotos. Curvas pueden conservarse como datos; el renderer no ad
 geometría curva/inclinada ni completa superficies ausentes.
 
 La ARSession de RoomCaptureView se conserva al terminar con stop(pauseARSession: false).
-RealityKit reutiliza ese origen para AR 1:1. En 3D hay cámara independiente y corte visual de
-muros a 0,65 m; AR usa altura original. Blanco activa superficies, no borra muebles del vídeo.
+RealityKit reutiliza ese origen para AR 1:1 y muestra los equipos con seguimiento normal. El visor
+lee la transformación de la cámara para dibujar posición y dirección en el plano. La oclusión LiDAR
+permite que la geometría física tape equipos virtuales. La vista 3D orbital corta muros a 0,65 m.
 
 Demo/importación usan otra ARWorldTrackingConfiguration, detección de superficie y colocación
 por toque. Escala de escena 0,1, rotulada Maqueta AR 1:10; no se alinea artificialmente al cuarto.
-Sin ARWorldMap ni anclajes relocalizables persistidos. Tras reiniciar: nuevo escaneo para AR 1:1
-o nueva colocación de maqueta.
+El ARWorldMap se guarda con el ID del cuarto al alcanzar mapeo suficiente. Tras reiniciar, la sesión
+1:1 lo carga y espera a que ARKit recupere el origen. La maqueta requiere nueva colocación.
 
 Planificador del cuarto: suelo válido, altura, huellas y accesos, sin solapamientos, máximo
 seis racks/dos puestos. Heurística determinista de pasillo recto, no optimizador ni certificación.
@@ -70,14 +72,26 @@ R42612 se dibuja desde placement, nunca como dispositivo activo dentro de otro r
 procedurales exteriores, tamaños cotejados sólo donde existen en catálogo. Cobre azul/fibra naranja
 tienen codos, conectores, selección y ficha de extremos; no son instalación certificada ni tráfico.
 
-Demo: 192 m², seis racks, dos puestos, 34 dispositivos, 44 enlaces; VLAN 10 gestión, 20 aplicaciones,
-30 correo, 40 web, 50 backup. DNS, SMTP/IMAP, HTTP/HTTPS, aplicaciones, backup y monitorización
-son roles descriptivos. WAN/internet es esquemática sin acceso real. Energía/refrigeración A/B
-son notas; no se inventan PDU, fuentes o garantías de redundancia.
+Plantilla: 192 m² de ejemplo, seis racks de TI, dos gabinetes de energía, cuatro InRow y tres puestos.
+`TierFacility.fit` registra la planta sobre el origen RoomPlan sin cambiar escalas. Los 46 equipos activos y
+70 circuitos de red conservan su identidad. Los tramos físicos conservan el ID de circuito. Energía y climatización viven en la escena de infraestructura.
+`switchedPath` atraviesa switches y el par correspondiente de cada patch panel, respetando puertos
+deshabilitados. Las PCs y laptops abren una consola al seleccionarlas. Los cambios de nombres,
+direcciones, interfaces y dominios persisten por plantilla e ID de equipo.
 
 [Tier IV de Uptime Institute](https://uptimeinstitute.com/tiers) incluye mantenibilidad concurrente,
 tolerancia a fallos, aislamiento físico y refrigeración continua. Sin diseño constructivo ni
 certificación en la demo; 16×12 m es ejemplo, no una dimensión normativa.
+
+## HomeLab y cámaras
+
+`LabDemo.homeLab` comparte la topología y la escala entre los visores. Si parte de RoomPlan, ajusta
+la distribución en coordenadas del escaneo. Al colocar en el piso, el centro del rack se registra
+con un ARAnchor nombrado en el ARWorldMap local. La escena se activa cuando el seguimiento es normal
+y se reconoce el ancla. `LabTravelView` usa una cámara de primera persona y colisiones con el
+contorno y huellas de los equipos. En estéreo ambas vistas usan la misma posición de recorrido.
+
+[Guía de montaje y operación](../Tools/Operations/README.md)
 
 ## Packet Tracer y límites
 

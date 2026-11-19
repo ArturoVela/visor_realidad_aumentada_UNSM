@@ -32,7 +32,7 @@ IPv4, VLAN, servicios descriptivos y configuración disponible.
 
 - MacBook Pro M4 de 14 pulgadas e iPhone 16 Pro con iOS 27.
 - Mi cuarto: escanear→guardar estructura→distribuir→AR 1:1 con la sesión conservada.
-- Demo: 16 × 12 × 3,5 m, 192 m², seis racks, dos puestos, 34 equipos, 44 enlaces y cinco VLAN.
+- Plantilla Tier IV: 16 × 12 × 3,5 m, seis racks TI, UPS/baterías A/B, cuatro InRow, tres puestos de operación, 31 equipos y 41 enlaces. Se puede aplicar a un cuarto con contorno y acceso compatibles.
 - Importación: .pkt→exportador Mac local→.nexus.json→**Importar topología exportada**.
 - Demo/importaciones: 3D y Maqueta AR 1:10, colocada por toque en superficie mediante
   ARWorldTracking independiente del escaneo.
@@ -101,5 +101,5 @@ Diagnósticos de estado sin fotos ni coordenadas. Datos reales, entornos y build
 ## Accessibility & Inclusion
 
 SwiftUI/AppKit nativos, áreas seguras, texto adaptable, hojas navegables y acento único.
-Elementos colocados y Red y conexiones permiten acceder sin acertar sobre hardware/cables pequeños.
+Elementos de la escena y Red y conexiones ofrecen acceso a equipos y cables desde listas.
 QA de orientación/texto grande/oscuro en simulador no sustituye validación física completa.

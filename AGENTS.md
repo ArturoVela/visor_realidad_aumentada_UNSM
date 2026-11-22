@@ -1,5 +1,10 @@
 # Nexus AR
 
+## Consultas del proyecto con Graphify
+
+- Si existe `graphify-out/graph.json`, ejecuta primero `graphify query "<pregunta>"` desde la raíz para localizar código, documentación y relaciones. Incluye los nombres de archivos o símbolos que conozcas. Usa `graphify explain "<símbolo>"` o `graphify path "<origen>" "<destino>"` para seguir conexiones.
+- Usa las rutas y líneas del grafo para abrir solo los archivos y fragmentos necesarios. Si el grafo falta, está desactualizado o no cubre la consulta, busca primero el archivo o símbolo con `rg` y amplía la lectura según lo que encuentres.
+
 ## Interfaz de este proyecto
 
 - Lee `.agents/skills/apple-design/SKILL.md` antes de diseñar, revisar o modificar la interfaz de Nexus AR. Esta copia de `apple-design` pertenece a este repositorio.

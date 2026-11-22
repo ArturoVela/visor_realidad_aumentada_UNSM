@@ -22,6 +22,10 @@ NativeCapture/DerivedData/
 **/.venv/
 Tools/PacketTracerExporter/build/
 
+# Cachés y resultados locales de Wrangler y Graphify.
+/.wrangler/
+/graphify-out/
+
 # Python y configuración privada local.
 **/__pycache__/
 *.py[cod]

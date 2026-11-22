@@ -61,7 +61,7 @@ cubre montaje, VLAN, servicios y automatizaciones.
 | Inspeccionar la red | Consulta equipos, puertos, extremos, IPv4, VLAN y configuración importada disponible. |
 | Seguir un cable | Apunta a un cable o puerto y pulsa **¿Adónde va?**. El visor resalta el recorrido y muestra equipo, puerto y rack de ambos extremos. |
 | Recorrer en primera persona | Camina en 3D con el control de movimiento. Modo VR en el teléfono vertical u horizontal, con vista estereoscópica opcional en horizontal. |
-| Importar Packet Tracer | Convierte .pkt a .nexus.json en Mac e importa el archivo desde el iPhone. |
+| Importar Packet Tracer | Envía un .pkt desde Finder al iPhone emparejado o importa un .nexus.json desde Archivos. |
 | Recuperar tu trabajo | Guarda datos localmente y restaura el laboratorio activo en 3D al abrir la app. |
 
 Las PCs y laptops abren una consola del plano y el inventario de 38 dominios. Los comandos
@@ -170,13 +170,14 @@ Unity no es necesario para ejecutar la app iPhone y no renderiza su vista móvil
 
 ### Packet Tracer → laboratorio importado
 
-1. Convierte tu .pkt con el exportador Mac, por CLI o interfaz gráfica.
-2. Transfiere el .nexus.json al iPhone, por ejemplo mediante AirDrop.
-3. Abre **Más opciones → Cuarto y archivos → Importar topología exportada** y selecciona el archivo.
+Con la [acción de Finder configurada](Tools/PacketTracerExporter/README-Mac.md), haz clic derecho
+en un .pkt y elige **Servicios → Enviar a Nexus Home**. Abre **Más opciones → Laboratorios guardados**
+y busca en **Recibidos del Mac**. También puedes elegir un .nexus.json en **Importar topología exportada**.
 
-La app valida los datos y genera una sala virtual. Las coordenadas del lienzo de Packet Tracer
-no se interpretan como dimensiones reales de tu cuarto. Conserva modelos, interfaces y
-configuración original como texto cuando están disponibles.
+Nexus AR monta una sala 3D con puestos y racks agrupados según las áreas y conexiones de Packet Tracer.
+El archivo conserva el plano original, los modelos, las interfaces, el tipo de cable y la configuración
+cuando están disponibles. Las fichas identifican el hardware de referencia que usa la escena.
+Los cinco ejemplos de `docs/archivos_pkt/` proceden de [PKT-Projects de 0xknoty](https://github.com/0xknoty/PKT-Projects).
 
 ## Arquitectura
 
@@ -215,8 +216,8 @@ Cisco y Dell. Los modelos 3D son representaciones exteriores aproximadas, no pla
 | Dell OptiPlex 7010 Mini Tower (2012) | Computadora |
 | Dell Latitude 5420 | Laptop |
 
-`Server-PT`, `PC-PT` y `Laptop-PT` conservan su identidad importada; usan referencias del catálogo
-para representarse. El rack es una colocación pasiva, no un dispositivo activo importado.
+El Catalyst 3650-24PS y el ISR 2811 también tienen ficha y modelo 3D. Los equipos genéricos,
+como `Server-PT`, `PC-PT` y `Laptop-PT`, tienen formas ilustrativas para su tipo.
 
 </details>
 
@@ -229,13 +230,13 @@ cd NativeCapture
 xcrun swiftc Sources/RoomStructure.swift Tests/RoomStructureCheck.swift -o /tmp/nexus-room-check
 /tmp/nexus-room-check
 
-xcrun swiftc Sources/RoomStructure.swift Sources/LabLayout.swift Tests/LabLayoutCheck.swift -o /tmp/nexus-layout-check
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Tests/LabLayoutCheck.swift -o /tmp/nexus-layout-check
 /tmp/nexus-layout-check
 
-xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Tests/LabTopologyCheck.swift -o /tmp/nexus-topology-check
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Tests/LabTopologyCheck.swift -o /tmp/nexus-topology-check
 /tmp/nexus-topology-check
 
-xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabImport.swift Tests/LabImportCheck.swift -o /tmp/nexus-import-check
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/LabImport.swift Tests/LabImportCheck.swift -o /tmp/nexus-import-check
 /tmp/nexus-import-check
 ```
 
@@ -266,7 +267,8 @@ siguen pendientes; consulta la [documentación nativa](NativeCapture/README.md) 
   permanecen disponibles en **Red y conexiones**.
 - **Modo VR:** la vista para gafas divide la escena por ojo en horizontal. En ambos formatos se
   avanza con el control de movimiento y se puede cambiar la mirada por gesto o con el sensor del teléfono.
-- **Importación:** hasta 8 MiB de JSON, 96 equipos, 192 enlaces, 64 VLAN, 12 racks y 24 puestos.
+- **Importación:** hasta 8 MiB de JSON, 96 equipos, 192 enlaces y 64 VLAN. Los JSON antiguos de
+  sala virtual admiten hasta 12 racks y 24 puestos.
   El conversor limita .pkt a 16 MiB y XML descomprimido a 32 MiB. Modelos o medios no admitidos,
   actividades .pka y evaluaciones producen error.
 - **Configuración importada:** el JSON puede conservar contraseñas presentes en el laboratorio original.

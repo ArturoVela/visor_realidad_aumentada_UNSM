@@ -27,6 +27,8 @@ las versiones de `requirements.txt`; el exportador nunca instala paquetes autom�
   accesibles en el archivo. Si existen varias IPv4, todas quedan en metadatos de configuración.
 - VLAN declaradas, nombres y subredes de SVI/subinterfaces cuando se identifican explícitamente.
   Access/dot1Q etiquetan los enlaces; el texto completo de trunks se conserva para inspección.
+- Posiciones lógicas, áreas rectangulares, colores y etiquetas del lienzo raíz. Los puertos
+  Serial WAN de los módulos de 2811 y 2911 conservan su numeración del archivo.
 
 `configuration` es texto: configuración original seguida, cuando corresponde, por un bloque de
 metadatos claramente rotulado. La app no debe ejecutarlo como comandos IOS.
@@ -37,30 +39,34 @@ metadatos claramente rotulado. La app no debe ejecutarlo como comandos IOS.
 | --- | --- |
 | 2960-24TT / 2960-24TT-L | switch-2960 |
 | 3560-24PS | switch-3560 |
-| 1941 / 2911 | router-1941 / router-2911 |
+| 3650-24PS | switch-3650 |
+| 1941 / 2811 / 2911 | router-1941 / router-2811 / router-2911 |
 | 5505 / ASA5505 | firewall-asa5505 |
 | 7960 / 7960G | phone-7960 |
-| Server-PT | server-c220m5 |
-| PC-PT | pc-optiplex7010 |
-| Laptop-PT | laptop-latitude5420 |
+| Server-PT | pt-server |
+| PC-PT | pt-desktop |
+| Laptop-PT | pt-laptop |
+| AccessPoint-PT | pt-access-point |
+| Printer-PT, TabletPC-PT, SMARTPHONE-PT y Power Distribution Device | Formas y medidas ilustrativas de cada tipo |
 
-Servidor, PC y laptop genéricos usan referencias visuales del catálogo; no se convierten en ese
-hardware físico. El rack es una colocación que genera la app, no un equipo inferido del archivo.
-Un modelo desconocido genera error explícito. Medios importables: cobre y fibra compatibles con
-los conectores documentados. En 3560 los dos uplinks Gigabit son fibra en el catálogo actual.
-Consola genera error: no hay un host serie documentado entre los diez modelos; no se inventa RS232
-en los Dell. Otros medios y enlaces sin cable también generan error.
+Los ocho tipos genéricos conservan su identidad y usan modelos 3D ilustrativos. Medios importables
+son cobre, fibra y Serial WAN compatibles con los conectores admitidos. Los uplinks Gigabit
+de 3560 y las ranuras SFP de 3650 se validan como fibra. Los enlaces de consola, los medios
+no admitidos y los modelos desconocidos generan un error explícito.
 
-PC/Laptop `FastEthernet0` o `GigabitEthernet0` se representa como `Ethernet`; Server-PT usa `LOM1`.
-Sólo se habilita `LOM2` si el archivo contiene al menos dos interfaces y nombra esa segunda interfaz.
+PC/Laptop/Printer `FastEthernet0` o `GigabitEthernet0` y AccessPoint-PT `Port 0` se representan como
+`Ethernet`. Server-PT usa `Ethernet` y añade `Ethernet 2` si el archivo declara ambas interfaces.
 Teléfono `Switch` se representa como `SW`. Puertos Cisco admitidos conservan su nombre completo.
 Interfaces lógicas (VLAN, subinterfaces, loopback) quedan en configuración, no como conectores físicos.
 
 ## Contrato y límites
 
-Objeto raíz: `name`, `devices`, `links`, `vlans`, `notes`, compatible con `LabTopology`.
-Cada equipo lleva `placementID: "unplaced"` y `offset: [0,0,0]`; la app asigna ubicación al importar.
-No se importan coordenadas físicas de Packet Tracer al cuarto escaneado.
+El JSON contiene `name`, `devices`, `links`, `vlans`, `notes` y, cuando está disponible,
+`logicalPlan` con coordenadas del lienzo. Los cables conservan el tipo de origen en `sourceCableType`.
+Cada equipo puede incluir `packetTracer` con su descripción, sus interfaces IPv4 y sus pools DHCP.
+El exportador recupera una IPv4 ausente si el archivo identifica el servidor DHCP y contiene una única concesión válida para la MAC del cliente. Conserva la configuración IOS y los registros de los pools para consulta.
+Cada equipo lleva `placementID: "unplaced"` y `offset: [0,0,0]`. Nexus AR usa el plano lógico
+y los enlaces del archivo para distribuir puestos y racks en una sala 3D de referencia.
 
 Máximos: 16 MiB de entrada, 32 MiB de XML descomprimido, 8 MiB de salida, 96 equipos, 192 enlaces,
 64 VLAN, nombres de hasta 160 caracteres y 64 KiB de configuración por equipo. Se rechazan puertos ocupados por dos cables,

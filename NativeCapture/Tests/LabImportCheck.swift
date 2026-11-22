@@ -3,12 +3,15 @@ import simd
 
 @main
 struct LabImportCheck {
-    static func main() throws {
+    @MainActor static func main() throws {
         let fixture = makeFixture()
         let data = try JSONEncoder().encode(fixture)
+        try checkLibrary(data)
         let project = try LabImport.project(from: data)
         try project.topology.validate(layout: project.layout)
-        precondition(project.topology.links == fixture.links && project.topology.vlans == fixture.vlans)
+        checkPatchedLinks(project, original: fixture)
+        try checkLegacyEditable(project, original: fixture)
+        precondition(project.topology.vlans == fixture.vlans)
         precondition(project.topology.notes == fixture.notes)
         precondition(project.layout.placements.count == 3)
         precondition(project.layout.placements.filter { $0.kind == .rack }.count == 1)
@@ -37,13 +40,13 @@ struct LabImportCheck {
         for device in mounted {
             let size = HardwareCatalog.renderSize(device.modelID)
             let slot = RackMount.slot(device.modelID, near: device.offset.y)
-            precondition(slot > 0 && slot + RackMount.units(device.modelID) <= 42)
+            precondition(slot >= 0 && slot + RackMount.units(device.modelID) <= 42)
             precondition(device.offset == RackMount.center(device.modelID, rackDepth: rack.size.z, slot: slot))
             precondition(abs(device.offset.x) + size.x / 2 <= rack.size.x / 2)
             precondition(abs(device.offset.z) + size.z / 2 <= rack.size.z / 2)
         }
-        let roundtrip = try LabImport.project(from: JSONEncoder().encode(project.topology))
-        precondition(roundtrip.topology == project.topology, "Reasignación determinista y conservación JSON.")
+        let roundtrip = try LabImport.project(from: data)
+        precondition(roundtrip.topology == project.topology, "La misma importación conserva los identificadores de panel y cable.")
         precondition(roundtrip.layout.placements == project.layout.placements)
         var dense = fixture
         dense.links = []
@@ -81,13 +84,190 @@ struct LabImportCheck {
         var devices = object["devices"] as! [[String: Any]]
         devices[0]["offset"] = ["NaN", 0, 0] as [Any]; object["devices"] = devices
         reject("NaN JSON") { _ = try LabImport.project(from: JSONSerialization.data(withJSONObject: object)) }
-        if CommandLine.arguments.count > 1 {
-            let exported = try LabImport.project(from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
+        for path in CommandLine.arguments.dropFirst() {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let source = try JSONDecoder().decode(LabTopology.self, from: data)
+            let exported = try LabImport.project(from: data)
             try exported.topology.validate(layout: exported.layout)
-            precondition(!exported.topology.devices.isEmpty)
-            print("Exportación .pkt real: \(exported.topology.devices.count) equipos, \(exported.topology.links.count) enlaces, \(exported.layout.placements.count) soportes")
+            precondition(exported.layout.importedRoom)
+            if let plan = source.logicalPlan {
+                precondition(exported.topology.logicalPlan?.areas == plan.areas && exported.topology.logicalPlan?.labels == plan.labels)
+                precondition(plan.devicePositions.allSatisfy { exported.topology.logicalPlan?.devicePositions[$0.key] == $0.value })
+            }
+            precondition(exported.topology.vlans == source.vlans)
+            checkPatchedLinks(exported, original: source)
+            for (before, after) in zip(source.devices, exported.topology.devices) {
+                var expected = before
+                expected.placementID = after.placementID
+                expected.offset = after.offset
+                precondition(expected == after, "Mantener identidad, modelos, puertos y configuración del PKT.")
+                if before.modelID == "pt-server" {
+                    precondition(after.visualModelID == "server-c220m5")
+                    precondition(exported.layout.placements.contains { $0.id == after.placementID && $0.kind == .rack })
+                }
+            }
+            let cables = try LabCablePlan.make(exported.topology, room: exported.room, layout: exported.layout)
+            precondition(cables.segments.map(\.link) == exported.topology.links, "\(path) perdió enlaces.")
+            for cable in cables.segments {
+                precondition(cable.points.first == cable.endpoints.first?.point)
+                precondition(cable.points.last == cable.endpoints.last?.point)
+                precondition(cable.points.allSatisfy { $0.x.isFinite && $0.y.isFinite && $0.z.isFinite })
+                for (start, end) in zip(cable.points, cable.points.dropFirst()) {
+                    let step = end - start
+                    precondition(simd_length(step) <= 0.035 || abs(step.y) <= 0.006 ||
+                                 simd_length(SIMD2(step.x, step.z)) <= 0.008,
+                                 "\(cable.link.id) atraviesa dos alturas en diagonal.")
+                }
+            }
+            let restored = try LabImport.project(from: data)
+            precondition(restored.layout.placements == exported.layout.placements)
+            precondition(restored.topology == exported.topology)
+            if let plan = source.logicalPlan {
+                let broken = LabLogicalPlan(devicePositions: [:], areas: plan.areas, labels: plan.labels)
+                try rejectMutation(exported.topology, "Plano sin posiciones de equipos") { $0.logicalPlan = broken }
+            }
+            let desks = exported.layout.placements.filter { $0.kind == .workstation }
+            if exported.topology.name == "Project #1" {
+                precondition(Set(desks.map(\.title)) == ["Admin / IT", "Finance / HR", "Customer services / Reception"])
+                let finance = desks.first { $0.title == "Finance / HR" }!
+                let laptops = exported.topology.devices.filter { $0.placementID == finance.id && $0.modelID == "pt-laptop" }
+                precondition(laptops.count == 2 && laptops[0].offset != laptops[1].offset)
+            }
+            if exported.topology.name == "Project #2", source.devices.contains(where: { $0.packetTracer != nil }) {
+                var plan = exported.topology
+                let dhcp = plan.devices.filter(\.providesDHCP)
+                precondition(Set(dhcp.map(\.name)) == ["DHCP 1", "DHCP 2", "DHCP3", "DHCP 4"])
+                precondition(Set(dhcp.map(\.placementID)).count == 4)
+                for server in dhcp {
+                    let rack = plan.devices.filter { $0.placementID == server.placementID }
+                    precondition(rack.filter { $0.modelID == "switch-2960" }.count == 1)
+                    precondition(rack.filter { $0.modelID == "router-2911" }.count == 1)
+                }
+                let source = plan.devices.first { $0.name == "Laptop 1A1" }!
+                let local = dhcp.first { $0.name == "DHCP 1" }!
+                let remote = dhcp.first { $0.name == "DHCP3" }!
+                precondition(source.ipv4 == "192.168.0.4")
+                let localPath = plan.importedIPv4Path(from: source, to: local, poweredOff: [])
+                precondition(localPath?.filter { !$0.modelID.hasPrefix("patch-") }.map(\.name) == ["Laptop 1A1", "Switch0", "DHCP 1"])
+                let routed = plan.importedIPv4Path(from: source, to: remote, poweredOff: [])
+                precondition(routed?.filter { !$0.modelID.hasPrefix("patch-") }.map(\.name) ==
+                             ["Laptop 1A1", "Switch0", "Router3", "Router3(1)", "Switch0(1)", "DHCP3"])
+                let healthy = plan.diagnosePing(from: source, to: remote, poweredOff: [])
+                precondition(healthy.issue == nil && healthy.path?.devices == routed)
+                let routeLinks = healthy.path?.links ?? []
+                let wanIndex = routeLinks.firstIndex { $0.medium == .serial }!
+                let wan = routeLinks[wanIndex]
+                var interrupted = plan
+                let routerIndex = interrupted.devices.firstIndex { $0.id == wan.fromDeviceID }!
+                interrupted.devices[routerIndex].shutdownPorts = [wan.fromPort]
+                let broken = interrupted.diagnosePing(from: source, to: remote, poweredOff: [])
+                precondition(broken.blockedLink == wan && broken.issue?.contains(wan.fromPort) == true)
+                precondition(broken.path?.links == Array(routeLinks.prefix(wanIndex)))
+                let reversed = interrupted.diagnosePing(from: remote, to: source, poweredOff: [])
+                precondition(reversed.blockedLink == wan && reversed.path?.devices.first == remote)
+                let off = plan.diagnosePing(from: source, to: local, poweredOff: [local.id])
+                precondition(off.blockedDevice == local && off.issue?.contains("apagado") == true)
+                var console = LabOperationsSession(stationID: source.id, targetID: source.id)
+                let success = console.execute("ping DHCP3", on: &plan)
+                precondition(success.contains("icmp_seq=0 ttl=62") && success.contains("0.0% packet loss"))
+                let timeout = console.execute("ping DHCP 1", on: &plan, poweredOff: [local.id])
+                precondition(timeout.contains("Request timeout") && timeout.contains("100.0% packet loss"))
+                let original = plan
+                _ = console.execute("hostname Laptop-CLI", on: &plan)
+                precondition(plan == original)
+                _ = console.execute("hostname Laptop-CLI", on: &plan, editingAllowed: true)
+                var candidate = exported
+                candidate.topology = plan
+                var (copy, entry) = try LabImport.createEditableCopy(of: candidate, site: UUID().uuidString)
+                defer { try? FileManager.default.removeItem(at: entry.url.deletingLastPathComponent()) }
+                _ = console.execute("ip address 192.168.0.125 255.255.255.0", on: &copy.topology)
+                try LabImport.saveEditable(copy, to: entry)
+                var saved = try LabImport.load(entry).topology
+                precondition(saved.devices.first { $0.id == source.id }?.name == "Laptop-CLI")
+                precondition(console.execute("ipconfig /all", on: &saved).contains("192.168.0.125"))
+                precondition(console.execute("ping DHCP 1", on: &saved).contains("0.0% packet loss"))
+            }
+            let rackCount = exported.layout.placements.count - desks.count
+            print("\(exported.topology.name): \(exported.topology.devices.count) equipos, \(cables.segments.count) enlaces, \(rackCount) racks, \(desks.count) puestos")
         }
-        print("PASS: importación JSON, coordenadas descartadas, 2 PCs+switch+router, huellas, enlaces/config preservados y rechazos de entrada inválida")
+        print("PASS: sala física, conservación de topología y plano de origen, puertos, límites y rutas para todos los enlaces.")
+    }
+
+    @MainActor private static func checkLibrary(_ original: Data) throws {
+        let suite = "NexusAR.ImportCheck." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let file = directory.appendingPathComponent("project.nexus.json")
+        try original.write(to: file)
+        let entry = LabImport.Entry(url: file, name: "Original", date: .now)
+        let library = SavedLaboratories(defaults: defaults)
+        try library.saveFolder("Prácticas")
+        let folder = library.folders[0]
+        try library.rename(entry, to: "  Práctica 1 ")
+        try library.change(entry) {
+            $0.folderID = folder.id
+            $0.enabled = false
+            $0.archived = true
+            $0.deleted = true
+        }
+        let restored = SavedLaboratories(defaults: defaults)
+        precondition(restored.name(entry) == "Práctica 1" && restored.hiddenKeys == [entry.libraryKey])
+        precondition(restored.details(entry).folderID == folder.id && !restored.details(entry).enabled)
+        try restored.change(entry) { $0.deleted = false }
+        precondition(restored.details(entry).archived)
+        try restored.change(entry) { $0.archived = false }
+        precondition(restored.details(entry).inLibrary)
+        try restored.removeFolder(folder)
+        precondition(restored.details(entry).folderID == nil && restored.folders.isEmpty)
+        let contents = try Data(contentsOf: file)
+        precondition(contents == original)
+    }
+
+    private static func checkPatchedLinks(_ project: LabProject, original: LabTopology) {
+        let topology = project.topology
+        let racks = Set(project.layout.placements.filter { $0.kind == .rack }.map(\.id))
+        let devices = Dictionary(uniqueKeysWithValues: topology.devices.map { ($0.id, $0) })
+        for link in original.links {
+            let trunk = topology.links.first { $0.id == link.id }!
+            let segments = topology.circuit(for: trunk)
+            precondition(segments.first?.fromDeviceID == link.fromDeviceID && segments.first?.fromPort == link.fromPort)
+            precondition(segments.last?.toDeviceID == link.toDeviceID && segments.last?.toPort == link.toPort)
+            precondition(trunk.sourceCableType == link.sourceCableType)
+            precondition(segments.allSatisfy { $0.medium == link.medium && $0.vlanIDs == link.vlanIDs })
+            let rackEndpoint = [link.fromDeviceID, link.toDeviceID].contains { devices[$0].map { racks.contains($0.placementID) } ?? false }
+            if rackEndpoint && link.medium != .serial {
+                precondition(segments.count > 1, "Falta patch panel en \(topology.name) · \(link.id).")
+            }
+        }
+    }
+
+    private static func checkLegacyEditable(_ project: LabProject, original: LabTopology) throws {
+        let (copy, entry) = try LabImport.createEditableCopy(of: project, site: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: entry.url.deletingLastPathComponent()) }
+        var legacy = copy
+        legacy.topology.devices.removeAll { $0.modelID.hasPrefix("patch-") }
+        legacy.topology.links = original.links
+        try LabImport.saveEditable(legacy, to: entry)
+        let before = try Data(contentsOf: entry.url)
+        let upgraded = try LabImport.load(entry)
+        let reopened = try LabImport.load(entry)
+        precondition(upgraded.topology == reopened.topology && upgraded.editableID == legacy.editableID)
+        precondition(upgraded.layout.placements == legacy.layout.placements)
+        let after = try Data(contentsOf: entry.url)
+        precondition(before == after)
+        checkPatchedLinks(upgraded, original: original)
+
+        let link = original.links[0]
+        var assembly = LabARAssembly(id: UUID(), name: "Antiguo montaje por piezas")
+        assembly.set(.init(id: .device(link.fromDeviceID), position: .zero, yaw: 0))
+        assembly.set(.init(id: .device(link.toDeviceID), position: [3, 0, 0], yaw: 0))
+        let plan = assembly.cablePlan(in: upgraded.topology, layout: upgraded.layout)
+        precondition(plan.connections.contains { $0.link.id == link.id && $0.routed && $0.link.toDeviceID == link.toDeviceID })
     }
 
     private static func makeFixture() -> LabTopology {

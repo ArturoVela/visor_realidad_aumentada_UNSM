@@ -2,23 +2,317 @@ import CoreGraphics
 import Foundation
 import simd
 
-nonisolated struct LabPlacement: Identifiable, Equatable, Sendable {
-    enum Kind: String, Codable, Sendable { case rack, workstation }
+nonisolated struct LabLogicalPlan: Codable, Sendable, Equatable {
+    struct Area: Codable, Sendable, Equatable {
+        let lower: SIMD2<Float>
+        let upper: SIMD2<Float>
+        let color: SIMD3<UInt8>
+        let filled: Bool
+
+        func contains(_ point: SIMD2<Float>) -> Bool {
+            lower.x <= point.x && point.x <= upper.x && lower.y <= point.y && point.y <= upper.y
+        }
+    }
+
+    struct Label: Codable, Sendable, Equatable {
+        let text: String
+        let position: SIMD2<Float>
+    }
+
+    let devicePositions: [String: SIMD2<Float>]
+    let areas: [Area]
+    let labels: [Label]
+}
+
+nonisolated struct LabPlacement: Codable, Identifiable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable { case rack, workstation, floor }
     let id: String
     let kind: Kind
     let title: String
     let position: SIMD3<Float>
     let yaw: Float
     let size: SIMD3<Float>
+    var bareDesk: Bool? = nil
 }
 
-nonisolated struct LabLayout: Sendable {
+nonisolated enum LabEquipmentSurface: Equatable { case floor, desk }
+
+nonisolated enum LabEquipmentTarget {
+    case floor(SIMD3<Float>)
+    case desk(String, SIMD2<Float>)
+}
+
+nonisolated struct LabLayout: Codable, Equatable, Sendable {
     let area: Float
     let floorHeight: Float
     let floorPolygon: [SIMD2<Float>]
-    let placements: [LabPlacement]
-    let warnings: [String]
+    var placements: [LabPlacement]
+    var warnings: [String]
     var facility: TierFacility? = nil
+    var importedRoom = false
+    var rackMonitors: [String: [LabARAssembly.RackMonitor]]? = nil
+    var accessories: [LabARAssembly.Piece]? = nil
+    var rackPDUs: [String: LabRackPower.Configuration]? = nil
+
+    var floorCenter: SIMD2<Float> {
+        floorPolygon.isEmpty ? .zero : floorPolygon.reduce(.zero, +) / Float(floorPolygon.count)
+    }
+
+    func pduConfiguration(for rackID: String) -> LabRackPower.Configuration {
+        if facility != nil && rackID.hasPrefix("rack-") { return .dual }
+        return rackPDUs?[rackID] ?? .right
+    }
+}
+
+nonisolated enum LabRackPower {
+    enum Configuration: String, CaseIterable, Codable, Sendable {
+        case right, left, dual
+
+        var title: String {
+            switch self {
+            case .right: "PDU derecha"
+            case .left: "PDU izquierda"
+            case .dual: "Dos PDU"
+            }
+        }
+
+        var sides: [RackMount.Side] {
+            switch self {
+            case .right: [.right]
+            case .left: [.left]
+            case .dual: [.left, .right]
+            }
+        }
+    }
+
+    struct Outlet: Codable, Equatable, Sendable {
+        let position: SIMD3<Float>
+        let normal: SIMD3<Float>
+    }
+
+    struct Endpoint {
+        let point: SIMD3<Float>
+        let exit: SIMD3<Float>
+        let normal: SIMD3<Float>
+
+        func on(_ piece: LabARAssembly.Piece) -> Self {
+            .init(point: piece.world(point), exit: piece.world(exit), normal: piece.rotation.act(normal))
+        }
+    }
+
+    struct Lead {
+        let deviceID: String
+        let points: [SIMD3<Float>]
+    }
+
+    struct Strip {
+        let side: RackMount.Side
+        let input: SIMD3<Float>
+        let sockets: [SIMD3<Float>]
+        let leads: [Lead]
+        let upsID: String?
+        let upstream: Endpoint
+    }
+
+    static let bendRadius: Float = 0.027
+    static let cordExit: Float = 0.021
+    static let rear = SIMD3<Float>(0, 0, 1)
+    static let upsModel = "ups-9px"
+
+    static func upsSources(in devices: [LabTopology.Device]) -> [LabTopology.Device] {
+        devices.filter { $0.visualModelID == upsModel }.sorted { ($0.offset.y, $0.id) < ($1.offset.y, $1.id) }
+    }
+
+    static func hasDualSupply(_ model: String) -> Bool {
+        model == "server-c220m5" || model == "server-firewall"
+    }
+
+    static func upsSocket(at center: SIMD3<Float>, output: Int? = nil) -> SIMD3<Float> {
+        let depth = HardwareCatalog.renderSize(upsModel).z
+        return center + SIMD3(output.map { -0.13 + Float($0) * 0.075 } ?? 0.16, 0, depth / 2 + 0.008)
+    }
+
+    static func equipmentSocket(_ model: String, circuit: Int = 0) -> SIMD3<Float> {
+        let size = HardwareCatalog.renderSize(model)
+        let x: Float, y: Float
+        switch model {
+        case "server-c220m5", "server-firewall":
+            x = size.x / 2 - 0.037 - Float(circuit) * 0.075; y = 0
+        case "switch-2960", "switch-3560": x = 0.16; y = 0
+        case "switch-3650": x = -0.163; y = 0
+        case "router-1941", "router-2811", "router-2911": x = -size.x * 0.38; y = 0.010
+        case "firewall-asa5505": x = size.x / 2 - 0.012; y = -0.012
+        default: x = max(0, size.x / 2 - 0.038); y = 0
+        }
+        return SIMD3(x, y, size.z / 2 + 0.008)
+    }
+
+    static func endpoint(_ point: SIMD3<Float>, beyond depth: Float) -> Endpoint {
+        .init(point: point, exit: SIMD3(point.x, point.y, max(point.z, depth) + 0.18), normal: rear)
+    }
+
+    static func strips(for size: SIMD3<Float>, configuration: Configuration, devices: [LabTopology.Device],
+                       includesLeads: Bool = true) -> [Strip] {
+        let units = RackMount.capacity(height: size.y)
+        let outletCount = max(1, units)
+        let pitch = min(RackMount.unit, (size.y - 0.10) / Float(outletCount))
+        let base = min(RackMount.base, size.y * 0.20)
+        let rearFace = size.z / 2
+        let outletDepth = rearFace - 0.226
+        let lane = rearFace - 0.054
+        let ups = upsSources(in: devices)
+        let consumers = includesLeads ? devices.filter { isConsumer($0.visualModelID) } : []
+        return configuration.sides.enumerated().map { circuit, side in
+            let x = side.sign * (size.x / 2 - 0.048)
+            let input = SIMD3(x, base + 0.001, outletDepth)
+            let sockets = (0..<outletCount).map { SIMD3(x, base + (Float($0) + 0.5) * pitch, outletDepth) }
+            var leads: [Lead] = []
+            let contacts = consumers.filter { circuit == 0 || hasDualSupply($0.visualModelID) }
+                .map { ($0.id, $0.offset + equipmentSocket($0.visualModelID, circuit: circuit)) }
+                .sorted { ($0.1.y, $0.0) < ($1.1.y, $1.0) }
+                .prefix(outletCount)
+            var firstFree = 0
+            for (index, (id, contact)) in contacts.enumerated() {
+                // Preserve the order of terminations and reserve an outlet for every remaining device.
+                let lastFree = outletCount - (contacts.count - index)
+                let slot = (firstFree...lastFree).min {
+                    abs(sockets[$0].y - contact.y) < abs(sockets[$1].y - contact.y)
+                } ?? firstFree
+                firstFree = slot + 1
+                let depth = lane - Float(slot % 3) * 0.009
+                if let points = rackLead(from: sockets[slot], to: contact, lane: depth) {
+                    leads.append(.init(deviceID: id, points: points))
+                }
+            }
+            let supply = ups.indices.contains(circuit) ? ups[circuit] : ups.first
+            if let supply, includesLeads,
+               let points = rackLead(from: input, to: upsSocket(at: supply.offset, output: circuit), lane: lane - 0.027) {
+                leads.append(.init(deviceID: supply.id, points: points))
+            }
+            return Strip(side: side, input: input, sockets: sockets, leads: leads, upsID: supply?.id,
+                         upstream: endpoint(supply.map { upsSocket(at: $0.offset) } ?? input, beyond: rearFace))
+        }
+    }
+
+    private static func rackLead(from start: SIMD3<Float>, to end: SIMD3<Float>, lane: Float) -> [SIMD3<Float>]? {
+        let turn = max(lane, end.z + cordExit + bendRadius)
+        let sideEnd = SIMD3(start.x, end.y, turn)
+        let branchEnd = SIMD3(end.x, end.y, turn)
+        let rise = end.y - start.y
+        if abs(rise) >= 2 * bendRadius {
+            let sideStart = SIMD3(start.x, start.y, turn)
+            return LabGeometry.cableBends([start, sideStart, sideEnd, branchEnd, end], radius: bendRadius)
+        }
+        // Small height changes fit behind the outlet with horizontal tangents at both ends.
+        let shiftStart = start.z + cordExit
+        let shiftDepth = turn - bendRadius - shiftStart
+        let shift = (0...8).map { sample in
+            let t = Float(sample) / 8
+            let eased = t * t * (3 - 2 * t)
+            return SIMD3(start.x, start.y + rise * eased, shiftStart + shiftDepth * t)
+        }
+        guard let exit = shift.last,
+              let branch = LabGeometry.cableBends([exit, sideEnd, branchEnd, end], radius: bendRadius) else { return nil }
+        return [start] + shift + branch.dropFirst()
+    }
+
+    static func isConsumer(_ model: String) -> Bool {
+        !model.hasPrefix("patch-") && ![upsModel, "battery-9px", "rack-r42612", "pt-power-distribution", "terminal-block"].contains(model)
+    }
+}
+
+nonisolated struct LabPlacementFootprint: Equatable {
+    let points: [SIMD2<Float>]
+    var yaw: Float? = nil
+    var rack: LabRackClearance? = nil
+    var requiresFloor = false
+
+    init(points: [SIMD2<Float>], yaw: Float? = nil) {
+        self.points = points
+        self.yaw = yaw
+    }
+
+    init(size: SIMD3<Float>, yaw: Float? = nil) {
+        let x = size.x / 2, z = size.z / 2
+        self.init(points: [SIMD2(-x, -z), SIMD2(x, -z), SIMD2(x, z), SIMD2(-x, z)], yaw: yaw)
+    }
+
+    init(rack size: SIMD3<Float>, yaw: Float? = nil) {
+        self.init(size: size, yaw: yaw)
+        rack = LabRackClearance(size: size)
+    }
+}
+
+nonisolated struct LabRackClearance: Equatable {
+    let size: SIMD3<Float>
+    // Suggested working space for the preview. Installation requirements depend on the rack and site.
+    static let accessDepth: Float = 0.60
+
+    enum Fit: Equatable {
+        case needsFloor, blocked, occupied, accessUnknown, accessLimited, clear
+
+        var canPlace: Bool { self == .clear || self == .accessUnknown || self == .accessLimited }
+    }
+
+    var accessSize: SIMD3<Float> { size + SIMD3(0, 0, 2 * Self.accessDepth) }
+
+    func fit(floor: [SIMD2<Float>], obstacles: [[SIMD3<Float>]]) -> Fit {
+        let half = size / 2
+        if obstacles.contains(where: { Self.intersects($0, halfWidth: half.x, halfDepth: half.z, height: size.y) }) {
+            return .blocked
+        }
+        func covers(_ size: SIMD3<Float>) -> Bool {
+            let corners = LabPlacementFootprint(size: size).points
+            guard corners.allSatisfy({ LabGeometry.contains($0, polygon: floor) }) else { return false }
+            return zip(corners, corners.dropFirst() + corners.prefix(1)).allSatisfy { start, end in
+                floor.indices.allSatisfy { index in
+                    LabGeometry.segmentDistance(start, end, floor[index], floor[(index + 1) % floor.count]) > 0.00001
+                }
+            }
+        }
+        guard covers(size) else { return .needsFloor }
+        if obstacles.contains(where: { Self.intersects($0, halfWidth: half.x, halfDepth: accessSize.z / 2,
+                                                      height: max(size.y, 1.5)) }) {
+            return .accessLimited
+        }
+        return covers(accessSize) ? .clear : .accessUnknown
+    }
+
+    private static func intersects(_ polygon: [SIMD3<Float>], halfWidth: Float, halfDepth: Float, height: Float) -> Bool {
+        // Clip the detected plane against the rack volume so a wall can intersect even with every vertex outside.
+        var clipped = polygon
+        let limits: [(axis: Int, sign: Float, value: Float)] = [
+            (0, 1, halfWidth), (0, -1, halfWidth), (1, 1, height), (1, -1, -0.04),
+            (2, 1, halfDepth), (2, -1, halfDepth)
+        ]
+        for (axis, sign, limit) in limits {
+            guard var previous = clipped.last else { return false }
+            var next: [SIMD3<Float>] = []
+            for point in clipped {
+                let a = previous[axis] * sign - limit
+                let b = point[axis] * sign - limit
+                if (a <= 0) != (b <= 0) { next.append(previous + (point - previous) * (a / (a - b))) }
+                if b <= 0 { next.append(point) }
+                previous = point
+            }
+            clipped = next
+        }
+        return !clipped.isEmpty
+    }
+}
+
+nonisolated enum LabOrbitGesture {
+    static func rotation(for delta: SIMD2<Float>, fingers: Int) -> SIMD2<Float> {
+        guard fingers == 1 || fingers == 3 else { return .zero }
+        let gain: Float = fingers == 3 ? 0.003 : 0.006
+        return SIMD2(-delta.x, delta.y) * gain
+    }
+
+    static func screenOffset(_ delta: SIMD2<Float>, radius: Float, field: Float, viewportHeight: Float) -> SIMD3<Float> {
+        guard viewportHeight > 0, radius.isFinite else { return .zero }
+        let unitsPerPoint = 2 * radius * tan(field * .pi / 360) / viewportHeight
+        return SIMD3(delta.x, -delta.y, 0) * unitsPerPoint
+    }
 }
 
 nonisolated enum LabARScale: Int, CaseIterable, Sendable {
@@ -44,14 +338,14 @@ nonisolated struct LabARSpace: Sendable {
         size = dimensions
     }
 
-    private init(size: SIMD3<Double>) { self.size = size }
+    init(size: SIMD3<Double>) { self.size = size }
 
     func scaled(to scale: LabARScale) -> LabARSpace {
         LabARSpace(size: size / Double(scale.rawValue))
     }
 }
 
-nonisolated struct TierFacility: Equatable, Sendable {
+nonisolated struct TierFacility: Codable, Equatable, Sendable {
     // Footprint of this template, including circulation allowance, in metres.
     static let width: Float = 14.6
     static let depth: Float = 10.8
@@ -204,8 +498,7 @@ nonisolated enum LabGeometry {
         return best.map { [a, $0, b] }
     }
 
-    static func cableBends(_ points: [SIMD3<Float>], radius: Float, segmentsPerBend: Int = 6) -> [SIMD3<Float>]? {
-        guard radius.isFinite, radius > 0, (2...12).contains(segmentsPerBend) else { return nil }
+    static func cableCorners(_ points: [SIMD3<Float>]) -> [SIMD3<Float>] {
         var path: [SIMD3<Float>] = []
         for point in points where path.last.map({ simd_distance($0, point) > 0.0001 }) ?? true {
             if path.count >= 2 {
@@ -215,6 +508,12 @@ nonisolated enum LabGeometry {
             }
             path.append(point)
         }
+        return path
+    }
+
+    static func cableBends(_ points: [SIMD3<Float>], radius: Float, segmentsPerBend: Int = 6) -> [SIMD3<Float>]? {
+        guard radius.isFinite, radius > 0, (2...12).contains(segmentsPerBend) else { return nil }
+        let path = cableCorners(points)
         guard path.count > 2 else { return path }
         var arcs: [[SIMD3<Float>]] = [[path[0]]]
         var previousTrim: Float = 0
@@ -543,6 +842,13 @@ nonisolated struct LabWalkPose: Equatable {
         if Self.permits(x, in: layout) { position.x = x.x }
         let z = SIMD2(position.x, position.z + delta.y)
         if Self.permits(z, in: layout) { position.z = z.y }
+    }
+
+    static func joystickAxes(_ input: SIMD2<Float>) -> SIMD2<Float> {
+        let radius = simd_length(input)
+        let deadZone: Float = 0.20
+        guard radius > deadZone else { return .zero }
+        return (input / radius) * ((min(radius, 1) - deadZone) / (1 - deadZone))
     }
 
     static func canTravel(from a: SIMD3<Float>, to b: SIMD3<Float>, in layout: LabLayout) -> Bool {

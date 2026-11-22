@@ -51,6 +51,9 @@ struct LabLayoutCheck {
     }
 
     static func main() throws {
+        let footprint = LabPlacementFootprint(size: SIMD3(0.6, 2, 1.2), yaw: .pi / 2)
+        precondition(footprint.points == [SIMD2(-0.3, -0.6), SIMD2(0.3, -0.6), SIMD2(0.3, 0.6), SIMD2(-0.3, 0.6)])
+        precondition(footprint.yaw == .pi / 2)
         let points: [SIMD3<Float>] = [SIMD3(-7, 0, -5), SIMD3(7, 0, 5), SIMD3(7, 3, -5), SIMD3(-7, 3, 5)]
         let orbitTarget = SIMD3<Float>(0, 1, 0)
         let rotation = simd_quatf(angle: 0.7, axis: SIMD3<Float>(0, 1, 0))

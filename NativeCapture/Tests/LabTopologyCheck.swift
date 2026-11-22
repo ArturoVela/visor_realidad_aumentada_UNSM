@@ -1,7 +1,7 @@
 import Foundation
 import simd
 
-/// Standalone check: compile with RoomStructure, HardwareCatalog, LabLayout and LabTopology.
+/// Standalone check for the topology and shared 3D/AR cable planner.
 @main
 struct LabTopologyCheck {
     static func reject(_ label: String, _ operation: () throws -> Void) {
@@ -20,7 +20,7 @@ struct LabTopologyCheck {
                 if let neighbor, visited.insert(neighbor).inserted { queue.append(neighbor) }
             }
         }
-        return visited.count == topology.devices.count
+        return topology.devices.filter { !$0.modelID.hasPrefix("patch-") }.allSatisfy { visited.contains($0.id) }
     }
 
     static func changed(_ base: LabTopology, _ label: String, _ update: (inout LabTopology) -> Void) {
@@ -38,9 +38,110 @@ struct LabTopologyCheck {
                          placements: placements, warnings: layout.warnings)
     }
 
+    static func checkViewerTools(_ project: LabProject) {
+        let topology = project.topology
+        let layout = project.layout
+        var device = topology.devices[0]
+        device.name = "Router Área Norte"
+        device.ipv4 = "192.0.2.10"
+        device.ports = ["GigabitEthernet0/1", "GigabitEthernet0/2"]
+        device.sourcePortNames = ["GigabitEthernet0/1": "GigabitEthernet1/0/1"]
+        device.packetTracer = .init(description: "", interfaces: [
+            .init(port: "GigabitEthernet1/0/1", ipv4: "192.0.2.11", mask: nil, gateway: nil, ospfArea: nil)
+        ], dhcpPools: [])
+        func search(_ text: String) -> [LabInspectionDestination] {
+            LabViewerSearchResult.find(text, devices: [device], in: layout).map(\.destination)
+        }
+        precondition(search(" area norte ") == [.init(deviceID: device.id)])
+        precondition(search("192.0.2.10") == [.init(deviceID: device.id)])
+        let port = LabInspectionDestination(deviceID: device.id, port: "GigabitEthernet0/1")
+        precondition(search("Router Gi0/1") == [port] && search("Gi1/0/1") == [port])
+        precondition(search("192.0.2.11") == [port] && search("Gi0/9").isEmpty)
+
+        let fiber = topology.visibleCableIDs(for: .medium(.fiber))
+        let vlan = topology.visibleCableIDs(for: .vlan(20))
+        precondition(!fiber.isEmpty && fiber.count < topology.links.count)
+        precondition(topology.links.allSatisfy { fiber.contains($0.id) == ($0.medium == .fiber) })
+        precondition(!vlan.isEmpty && topology.links.allSatisfy { vlan.contains($0.id) == $0.vlanIDs.contains(20) })
+        let rack = layout.placements.first { $0.kind == .rack }!
+        let devices = Set(topology.devices.filter { $0.placementID == rack.id }.map(\.id))
+        let relevant = topology.links.filter { devices.contains($0.fromDeviceID) || devices.contains($0.toDeviceID) }
+        let rackLinks = topology.visibleCableIDs(for: .rack(rack.id))
+        precondition(!rackLinks.isEmpty && rackLinks.count < topology.links.count)
+        precondition(rackLinks == Set(relevant.flatMap(topology.circuit(for:)).map(\.id)))
+
+        let clearance = LabRackClearance(size: SIMD3(0.6, 2, 1))
+        let floor = LabPlacementFootprint(size: SIMD3(4, 0, 4)).points
+        let edge = LabPlacementFootprint(size: SIMD3(0.7, 0, 1.1)).points
+        func wall(at z: Float) -> [SIMD3<Float>] {
+            [SIMD3(-3, 0, z), SIMD3(3, 0, z), SIMD3(3, 3, z), SIMD3(-3, 3, z)]
+        }
+        let overhead: [SIMD3<Float>] = [SIMD3(-2, 2.4, -2), SIMD3(2, 2.4, -2), SIMD3(2, 2.4, 2), SIMD3(-2, 2.4, 2)]
+        precondition(clearance.fit(floor: [], obstacles: []) == .needsFloor)
+        precondition(clearance.fit(floor: edge, obstacles: []) == .accessUnknown)
+        precondition(clearance.fit(floor: floor, obstacles: [overhead]) == .clear)
+        precondition(clearance.fit(floor: floor, obstacles: [wall(at: 0.75)]) == .accessLimited)
+        precondition(clearance.fit(floor: floor, obstacles: [wall(at: -0.35)]) == .blocked)
+    }
+
+    static func checkVLANDemo() throws {
+        let project = try LabDemo.vlanLab()
+        var topology = try JSONDecoder().decode(LabTopology.self, from: JSONEncoder().encode(project.topology))
+        try topology.validate(layout: project.layout)
+        let rack = project.layout.placements.first { $0.kind == .rack }!
+        let rackDevices = topology.devices.filter { $0.placementID == rack.id }
+        precondition(project.layout.area == 28.8 && project.layout.placements.count == 4)
+        precondition(project.layout.rackMonitors?[rack.id]?.map(\.panel) == [.network, .services])
+        let power = LabRackPower.strips(for: rack.size, configuration: project.layout.pduConfiguration(for: rack.id), devices: rackDevices)
+        precondition(power.count == 1 && power[0].upsID == "UPS-01")
+        precondition(Set(power[0].leads.map(\.deviceID)).isSuperset(of: ["UPS-01", "SW-A", "SW-B", "R-VLAN", "SRV-DEMO", "VENT-RACK"]))
+        let cablePlan = try LabCablePlan.make(topology, room: project.room, layout: project.layout)
+        precondition(Set(cablePlan.segments.map(\.link.id)) == Set(topology.links.map(\.id)))
+
+        let a = topology.devices.first { $0.id == "PC-A" }!
+        let b = topology.devices.first { $0.id == "PC-B" }!
+        let c = topology.devices.first { $0.id == "PC-C" }!
+        let local = topology.diagnosePing(from: a, to: b, poweredOff: [])
+        precondition(local.sample.received == 4 && local.path?.links.contains { $0.vlanIDs == [10, 20] } == true)
+        let blocked = topology.diagnosePing(from: a, to: c, poweredOff: [])
+        precondition(blocked.sample.loss == 100 && blocked.blockedDevice?.id == "R-VLAN")
+        precondition(blocked.path?.devices.last?.id == "R-VLAN" && blocked.issue?.contains("ACL") == true)
+        precondition(topology.testNetwork(from: a, to: c, tcp: 80, poweredOff: []).contains("Permitido"))
+        let routed = topology.diagnosePing(from: b, to: c, poweredOff: [])
+        precondition(routed.sample.received == 4 && routed.path?.devices.contains { $0.id == "R-VLAN" } == true)
+        var withoutTrunk = topology
+        withoutTrunk.disconnect("troncal")
+        precondition(withoutTrunk.diagnosePing(from: a, to: b, poweredOff: []).sample.loss == 100)
+        precondition(withoutTrunk.diagnosePing(from: b, to: c, poweredOff: []).sample.received == 4)
+        let routerIndex = topology.devices.firstIndex { $0.id == "R-VLAN" }!
+        var routerConsole = LabOperationsSession(stationID: b.id, targetID: "R-VLAN")
+        precondition(routerConsole.execute("show run", on: &topology).contains("deny icmp host 192.168.10.11 host 192.168.20.13 echo"))
+        var switchConsole = LabOperationsSession(stationID: a.id, targetID: "SW-A")
+        precondition(switchConsole.execute("show interfaces trunk", on: &topology).contains("VLAN 10, 20"))
+        var console = LabOperationsSession(stationID: a.id, targetID: a.id)
+        precondition(console.execute("ping PC-B", on: &topology).contains("4 packets received"))
+        precondition(console.execute("ping PC-C", on: &topology).contains("ACL"))
+        let outage = topology.rackPowerFailures(in: project.layout, poweredOff: ["UPS-01"])
+        precondition(outage == ["SW-A", "SW-B", "R-VLAN", "SRV-DEMO", "VENT-RACK"])
+        precondition(topology.diagnosePing(from: b, to: c, poweredOff: outage).sample.loss == 100)
+        precondition(topology.diagnosePing(from: b, to: c, poweredOff: []).sample.received == 4)
+
+        let server = topology.devices.first { $0.id == "SRV-DEMO" }!
+        precondition(topology.testNetwork(from: b, to: server, tcp: 80, poweredOff: []).contains("HTTP 200"))
+        precondition(topology.resolveSimulatedDNS("demo.lab", from: b, poweredOff: []).contains("192.168.10.20"))
+        let lease = try topology.requestDHCP(for: b.id, vlan: 10)
+        precondition(lease.contains("192.168.10.100"))
+        let leased = topology.devices.first { $0.id == b.id }!
+        precondition(topology.diagnosePing(from: leased, to: c, poweredOff: []).sample.received == 4)
+        topology.devices[routerIndex].icmpEchoDeny = nil
+        precondition(topology.diagnosePing(from: a, to: c, poweredOff: []).sample.received == 4)
+    }
+
     static func main() throws {
+        try checkVLANDemo()
         let project = try LabDemo.dataCenter(), topology = project.topology
         try topology.validate(layout: project.layout)
+        checkViewerTools(project)
         precondition(project.layout.placements.filter { $0.kind == .rack }.count == 6)
         precondition(project.layout.placements.filter { $0.kind == .workstation }.count == 3)
         precondition(project.layout.area == 192 && project.room.source.contains("sintética"))
@@ -109,6 +210,11 @@ struct LabTopologyCheck {
         precondition(topology.links.filter { $0.id.hasSuffix("-ha") }.count == 2)
         let web = topology.devices.first { $0.id == "rack-web:server-1" }!
         let pc = testPCs[0]
+        var tierPlan = topology
+        var tierConsole = LabOperationsSession(stationID: pc.id, targetID: pc.id)
+        precondition(tierConsole.execute("ipconfig", on: &tierPlan).contains("IPv4: 192.168.20.101"))
+        precondition(tierConsole.execute("test rack-web:server-1 443", on: &tierPlan).contains("Permitido"))
+        precondition(tierPlan == topology)
         precondition(topology.testNetwork(from: pc, to: web, tcp: 443, poweredOff: []).contains("Permitido"))
         precondition(topology.testNetwork(from: pc, to: web, tcp: 22, poweredOff: []).contains("Bloqueado"))
         precondition(topology.testNetwork(from: pc, to: web, tcp: 443, poweredOff: [firewalls[0].id]).contains("Permitido"))
@@ -126,8 +232,26 @@ struct LabTopologyCheck {
         precondition(stopped.state == .offline && stopped.receiveMbps == 0 && stopped.cpu == 0)
         let isolated = LabServerSample(device: web, topology: topology, poweredOff: ["rack-web:access-0", "rack-web:access-1"])
         precondition(isolated.state == .isolated && isolated.transmitMbps == 0)
-        let sample = LabServerSample(device: web, topology: topology, poweredOff: [])
+        let sample = LabServerSample(device: web, topology: topology, poweredOff: [],
+                                     timestamp: Date(timeIntervalSince1970: 10))
         precondition(sample.state == .available && sample.receiveMbps > 0)
+        let nextSample = LabServerSample(device: web, topology: topology, poweredOff: [],
+                                         timestamp: sample.timestamp.addingTimeInterval(LabServerSample.interval))
+        precondition(sample.cpu != nextSample.cpu)
+        let defaultMonitor = LabMonitorConfiguration()
+        let networkMonitor = LabMonitorConfiguration(panel: .network, chart: .automatic)
+        let customMonitor = LabMonitorConfiguration(panel: .network, chart: .rings)
+        precondition(defaultMonitor.usesRings && !networkMonitor.usesRings && customMonitor.usesRings)
+        precondition(networkMonitor.panel.metrics.map { $0.value(in: sample) } == [sample.receiveMbps, sample.transmitMbps])
+        let savedMonitor = try JSONEncoder().encode(customMonitor)
+        let restoredMonitor = try JSONDecoder().decode(LabMonitorConfiguration.self, from: savedMonitor)
+        precondition(restoredMonitor == customMonitor)
+        let screen = CGRect(origin: .zero, size: LabMonitorMount.faceSize)
+        let plots = (0..<2).map(LabMonitorMount.chartFrame)
+        let textFrames = [LabMonitorMount.heading] + (0..<2).map(LabMonitorMount.captionFrame)
+        precondition((plots + textFrames).allSatisfy { screen.contains($0) })
+        precondition(plots.allSatisfy { plot in textFrames.allSatisfy { !plot.intersects($0) } })
+        precondition(!plots[0].intersects(plots[1]))
         let trial = LabFacilityTrial(scenario: .transfer, path: "A", loadKW: 12, availableKW: 14,
                                      transferSeconds: 125, batteryMinutes: 2, note: "")
         precondition(!trial.passed)
@@ -206,7 +330,7 @@ struct LabTopologyCheck {
         precondition(abs(monitorDiagonal / 0.0254 - 14) < 0.02)
         let homeRack = home.layout.placements[0]
         precondition(RackMount.capacity(height: homeRack.size.y) == 18)
-        precondition(home.topology.devices.count == 16 && home.topology.links.count == 26)
+        precondition(home.topology.devices.filter { $0.modelID == "patch-copper" }.count == 2 && home.topology.links.count == 26)
         precondition(home.topology.devices.first { $0.modelID == "patch-copper" }?.offset.y ==
                      RackMount.center("patch-copper", rackDepth: homeRack.size.z, slot: 17).y)
         for link in home.topology.links where link.id == link.circuitID {
@@ -227,11 +351,25 @@ struct LabTopologyCheck {
         precondition(home.topology.switchedPath(from: admin, to: "home-nvr", vlan: 10) == nil)
         var edited = home.topology
         var cli = LabOperationsSession(stationID: admin, targetID: admin)
+        let ipConfig = "PC-ADMIN\nIPv4: 192.168.60.101\nVLAN: 10\nSubred: 192.168.60.0/24"
+        precondition(cli.execute("ipconfig", on: &edited) == ipConfig)
+        precondition(cli.execute(" IP  ADDR ", on: &edited) == ipConfig)
+        precondition(cli.execute("hostname", on: &edited) == "PC-ADMIN")
+        precondition(cli.execute("test home-pve 8006", on: &edited).contains("Enlace local"))
+        precondition(cli.execute("resolve velaarturo.com", on: &edited).contains("→ 192.168.60.10"))
+        _ = cli.execute("connect UPS-01", on: &edited)
+        precondition(cli.execute("ipconfig", on: &edited) == "UPS-01\nIPv4: Sin dirección\nVLAN: —\nSubred: —")
+        _ = cli.execute("connect PC-ADMIN", on: &edited)
         precondition(cli.execute("ping PVE-01", on: &edited).contains("SW-HOME"))
         _ = cli.execute("connect SW-HOME", on: &edited)
         _ = cli.execute("interface fastethernet0/1", on: &edited)
         _ = cli.execute("shutdown", on: &edited)
         precondition(edited.switchedPath(from: admin, to: "home-pve", vlan: 10) == nil)
+        let origin = edited.devices.first { $0.id == admin }!
+        let destination = edited.devices.first { $0.id == "home-pve" }!
+        let diagnosis = edited.diagnosePing(from: origin, to: destination, poweredOff: [])
+        precondition(diagnosis.path?.links.map(\.id) == ["home-pc-1.p2"])
+        precondition(diagnosis.blockedLink?.id == "home-pc-1" && diagnosis.issue?.contains("FastEthernet0/1") == true)
         precondition(cli.execute("show interfaces", on: &edited).contains("FastEthernet0/1 · Deshabilitado"))
         _ = cli.execute("no shutdown", on: &edited)
         precondition(edited.switchedPath(from: admin, to: "home-pve", vlan: 10) != nil)
@@ -240,12 +378,39 @@ struct LabTopologyCheck {
         precondition(edited == home.topology)
         _ = cli.execute("ip address 192.168.60.11", on: &edited)
         _ = cli.execute("hostname NODO-WEB", on: &edited)
+        precondition(cli.execute("ipconfig", on: &edited).hasPrefix("NODO-WEB\nIPv4: 192.168.60.11\n"))
         _ = cli.execute("site move torneo.velaarturo.com home-web", on: &edited)
         try edited.validate(layout: home.layout)
         let changes = LabOperationsOverrides(edited, against: home.topology)
         let persisted = try decoder.decode(LabOperationsOverrides.self, from: encoder.encode(changes))
         precondition(persisted.apply(to: home.topology) == edited)
         precondition(edited.siteRoutes["torneo.velaarturo.com"] == "home-web")
+        _ = cli.execute("connect SW-HOME", on: &edited)
+        precondition(cli.mode == .user)
+        precondition(cli.execute("conf t", on: &edited).contains("enable"))
+        precondition(cli.execute("e", on: &edited).contains("ambiguo") && cli.mode == .user)
+        _ = cli.execute("Enbl", on: &edited)
+        _ = cli.execute("conf t", on: &edited)
+        _ = cli.execute("int Fa0/1", on: &edited)
+        precondition(cli.mode == .interface && cli.port == "FastEthernet0/1")
+        _ = cli.execute("desc Rack HomeLab", on: &edited)
+        _ = cli.execute("sw acc vl 30", on: &edited)
+        let switchDevice = edited.devices.first { $0.id == cli.targetID }!
+        precondition(cli.prediction(for: "sh ip int br", device: switchDevice, history: []) == "show ip interface brief")
+        precondition(cli.prediction(for: "sh r", device: switchDevice, history: ["show running-config"]) == "show running-config")
+        precondition(cli.prediction(for: "sw", device: origin, history: []) == nil)
+        precondition(cli.execute("do sh ip int br", on: &edited).contains("FastEthernet0/1"))
+        precondition(edited.switchedPath(from: admin, to: "home-pve", vlan: 10) == nil)
+        precondition(edited.links.filter { $0.circuitID == "home-pc-1" }.allSatisfy { $0.vlanIDs == [30] })
+        precondition(cli.execute("do show interfaces Fa0/1", on: &edited).contains("Rack HomeLab"))
+        _ = cli.execute("end", on: &edited)
+        precondition(cli.mode == .privileged && cli.port == nil)
+        precondition(cli.execute("show startup-config", on: &edited).contains("description Rack HomeLab"))
+        try edited.validate(layout: home.layout)
+        let cliOverrides = try decoder.decode(LabOperationsOverrides.self, from: encoder.encode(LabOperationsOverrides(edited, against: home.topology)))
+        precondition(cliOverrides.apply(to: home.topology) == edited)
+        let legacyOverrides = try decoder.decode(LabOperationsOverrides.self, from: Data(#"{"names":{},"addresses":{},"ports":{},"routes":{}}"#.utf8))
+        precondition(legacyOverrides.apply(to: home.topology) == home.topology)
         var unplugged = home.topology
         unplugged.links.removeAll { $0.id == "home-pc-1.p2" }
         precondition(unplugged.switchedPath(from: admin, to: "home-pve", vlan: 10) == nil)
@@ -255,6 +420,10 @@ struct LabTopologyCheck {
         precondition(fittedHome.layout.placements.map(\.size) == home.layout.placements.map(\.size))
         let small = try LabDemo.virtualRoom(width: 3, depth: 3, height: 2.6)
         reject("HomeLab en planta insuficiente") { _ = try LabDemo.homeLab(in: (small, LabLayoutPlanner.plan(room: small))) }
+        precondition(LabWalkPose.joystickAxes(.zero) == .zero)
+        precondition(LabWalkPose.joystickAxes(SIMD2(0.12, 0.1)) == .zero)
+        precondition(simd_distance(LabWalkPose.joystickAxes(SIMD2(0.6, 0)), SIMD2(0.5, 0)) < 0.0001)
+        precondition(abs(simd_length(LabWalkPose.joystickAxes(SIMD2(1, 1))) - 1) < 0.0001)
         var walk = LabWalkPose.start(in: home.layout)
         let start = walk.position
         for _ in 0..<100 { walk.walk(SIMD2(0, 1), seconds: 0.016, in: home.layout) }
@@ -292,6 +461,39 @@ struct LabTopologyCheck {
             precondition(simd_dot(pose.position - target.center, normal) > 0.6, "Puesta frontal requerida.")
             precondition(LabWalkPose.permits(SIMD2(pose.position.x, pose.position.z), in: project.layout))
         }
+        let arDevices = LabFocusTarget.inventory(topology, in: project.layout)
+        let arServer = topology.devices.first { $0.modelID == "server-c220m5" }!
+        let arRack = project.layout.placements.first { $0.id == arServer.placementID }!
+        let arTarget = arDevices.first { $0.id == arServer.id }!
+        let onlyServer = LabARFocus.device(arServer.id), onlyRack = LabARFocus.placement(arRack.id)
+        precondition(topology.devices.filter(onlyServer.includes) == [arServer])
+        precondition(topology.devices.filter(onlyRack.includes).allSatisfy { $0.placementID == arRack.id })
+        precondition(onlyRack.pivot(in: project.layout, topology: topology) == arRack.position)
+        precondition(onlyServer.pivot(in: project.layout, topology: topology) ==
+                     arTarget.center - SIMD3(0, arTarget.size.y / 2, 0))
+        let tier = project.layout.facility!
+        precondition(tier.fixtures.count == 8 && Set(tier.fixtures.map(\.id)).count == 8)
+        precondition(tier.fixtures.filter { $0.kind == .batteryBank }.map(\.circuit) == ["A", "B"])
+        for fixture in tier.fixtures {
+            let focus = LabARFocus.fixture(fixture.id)
+            precondition(focus.placementID(in: topology) == nil && !focus.includes(arServer))
+            precondition(focus.pivot(in: project.layout, topology: topology) == tier.world(fixture.position))
+            precondition(focus.size(in: project.layout, topology: topology) == fixture.kind.size)
+        }
+        let pcs = topology.devices.filter { $0.visualModelID == "pc-optiplex7010" }
+        precondition(pcs.count == 3)
+        for pc in pcs {
+            let desk = LabARFocus.placement(pc.placementID)
+            let focus = LabARFocus.device(pc.id)
+            precondition(desk.includes(pc) && !desk.includes(arServer))
+            precondition(focus.size(in: project.layout, topology: topology) == pc.visualSize)
+            let size = pc.visualSize
+            let model = LabARSpace(size: SIMD3(Double(size.x), Double(size.y), Double(size.z)))
+            for scale in [LabARScale.tenth, .twentieth] {
+                let preview = model.scaled(to: scale)
+                precondition(preview.size.x > 0 && preview.size.y > 0 && preview.size.z > 0)
+            }
+        }
 
         let traffic = LabTrafficRoute([[SIMD3(0, 0, 0), SIMD3(1, 0, 0)], [SIMD3(3, 0, 0), SIMD3(7, 0, 0)]])!
         precondition(traffic.length == 5 && traffic.point(at: 0) == .zero && traffic.point(at: 1).x == 7)
@@ -322,6 +524,6 @@ struct LabTopologyCheck {
             try local.validate(layout: layout)
             print("Captura real: \(local.devices.count) equipos, \(local.links.count) enlaces")
         }
-        print("PASS: Tier IV y HomeLab, escala, montaje, par de puertos, caminos VLAN, navegación, enfoque, saltos a puertos, pulsos, encaje y JSON")
+        print("PASS: demo VLAN y ping, ACL, UPS, pantallas, servicios, Tier IV, HomeLab, montaje, navegación y JSON")
     }
 }

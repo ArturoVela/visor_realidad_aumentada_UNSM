@@ -55,6 +55,49 @@ def must_fail(operation, message):
 
 
 def main():
+    examples = Path(__file__).resolve().parents[2] / "docs/archivos_pkt"
+    totals = [(19, 10, 3, 0), (25, 25, 4, 5), (75, 74, 16, 4), (44, 39, 9, 4), (33, 25, 14, 3)]
+    projects = []
+    for number, (devices, links, areas, serial) in enumerate(totals, 1):
+        source = examples / f"Project #{number}" / f"Project #{number}.pkt"
+        lab = exporter.read_lab(source)
+        dto = exporter.to_topology(lab, source.stem)
+        assert (len(dto["devices"]), len(dto["links"]), len(dto["logicalPlan"]["areas"])) == (devices, links, areas)
+        assert sum(link["medium"] == "serial" for link in dto["links"]) == serial
+        assert dto["logicalPlan"]["devicePositions"] == {
+            f"pt-{device.dev_addr}": [device.workspace.x, device.workspace.y] for device in lab.devices
+        }
+        projects.append(dto)
+    assert len({device["modelID"] for project in projects for device in project["devices"]}) == 12
+    wan = projects[1]
+    servers = [device for device in wan["devices"] if device["modelID"] == "pt-server"]
+    assert {device["name"] for device in servers} == {"DHCP 1", "DHCP 2", "DHCP3", "DHCP 4"}
+    for server in servers:
+        pool, = server["packetTracer"]["dhcpPools"]
+        assert pool["enabled"] and pool["name"] == "serverPool"
+        assert pool["start"] == server["ipv4"].removesuffix(".2") + ".3"
+    laptops = [device for device in wan["devices"] if device["modelID"] == "pt-laptop"]
+    assert len({device["ipv4"] for device in laptops}) == 12
+    assert all(device["packetTracer"]["interfaces"][0]["fromLease"] for device in laptops)
+    assert any(port["ospfArea"] == "0.0.0.0" for device in wan["devices"] if device["modelID"] == "router-2911"
+               for port in device["packetTracer"]["interfaces"] if port["port"].startswith("Serial"))
+    office = projects[0]
+    assert {device["modelID"] for device in office["devices"]} >= {
+        "pt-access-point", "pt-desktop", "pt-laptop", "pt-printer", "pt-tablet", "pt-smartphone",
+        "pt-power-distribution",
+    }
+    assert {device["sourcePortNames"]["Ethernet"] for device in office["devices"]
+            if device["modelID"] == "pt-access-point"} == {"Port 0"}
+    plan = office["logicalPlan"]
+    assert {label["text"].splitlines()[0] for label in plan["labels"]} >= {
+        "Admin / IT", "Finance / HR", "Customer services / Reception",
+    }
+    devices = {device["name"]: device["id"] for device in office["devices"]}
+    finance = next(area for area in plan["areas"] if area["lower"] == [1074.0, 525.0])
+    for name in ("PC 2", "Laptop 2", "Laptop 3"):
+        assert all(minimum <= value <= maximum for minimum, value, maximum
+                   in zip(finance["lower"], plan["devicePositions"][devices[name]], finance["upper"]))
+
     root, addresses = original_fixture()
     xml = ET.tostring(root, encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="nexus-original-pkt-") as folder:
@@ -68,13 +111,13 @@ def main():
         assert json.loads(output.read_text()) == result
         by_name = {device["name"]: device for device in result["devices"]}
         assert by_name["PC-A"]["ipv4"] == "192.168.10.10" and by_name["PC-A"]["vlan"] == 10
-        assert by_name["PC-B"]["modelID"] == "pc-optiplex7010"
+        assert by_name["PC-B"]["modelID"] == "pt-desktop"
         assert by_name["PC-A"]["ports"] == ["Ethernet"]
         assert by_name["PC-A"]["sourcePortNames"] == {"Ethernet": "FastEthernet0"}
         assert "192.168.10.1" in by_name["PC-A"]["configuration"]
         assert "switchport access vlan 10" in by_name["SW-EDUCACION"]["configuration"]
-        assert by_name["SERVIDOR"]["modelID"] == "server-c220m5" and "HTTP" in by_name["SERVIDOR"]["services"]
-        assert by_name["SERVIDOR"]["ports"] == ["LOM1"] and "LOM2" not in by_name["SERVIDOR"]["sourcePortNames"]
+        assert by_name["SERVIDOR"]["modelID"] == "pt-server" and "HTTP" in by_name["SERVIDOR"]["services"]
+        assert by_name["SERVIDOR"]["ports"] == ["Ethernet"] and "Ethernet 2" not in by_name["SERVIDOR"]["sourcePortNames"]
         assert by_name["R-EDUCACION"]["ipv4"] == "192.168.10.1"
         assert all("." not in port for port in by_name["R-EDUCACION"]["ports"])
         vlans = {vlan["id"]: vlan for vlan in result["vlans"]}
@@ -121,7 +164,7 @@ def main():
         cli = subprocess.run([sys.executable, "-B", str(Path(exporter.__file__)), str(source), "-o",
                               str(directory / "cli.nexus.json")], capture_output=True, text=True, check=False)
         assert cli.returncode == 0, cli.stderr
-    print("PASS: PKT moderno/legacy propio → DTO, dev_addr, puertos, IPv4/VLAN/servicios/config, límites y errores; salida atómica sin sobreescribir")
+    print("PASS: cinco proyectos, 12 modelos, plano lógico, serial, límites del PKT y escritura atómica.")
 
 
 if __name__ == "__main__":

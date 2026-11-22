@@ -13,10 +13,13 @@ struct LabTravelView: View {
     let room: RoomStructure
     let layout: LabLayout
     let baseTopology: LabTopology?
+    private let liveBase: (() -> LabTopology?)?
+    private let save: ((LabTopology) throws -> Void)?
     @State private var topology: LabTopology?
     @State private var topologyRevision = 0
     @Environment(LabOperationsStore.self) private var operations
     @Binding var showCables: Bool
+    @Binding var cableFilter: LabCableFilter?
     let poweredOff: Set<String>
     @State private var focusTargets: [LabFocusTarget]
     @Binding var showTraffic: Bool
@@ -34,20 +37,26 @@ struct LabTravelView: View {
     @State private var showsScene = false
     @State private var readyEyes = Set<Int>()
     @State private var showingMonitors = false
+    @State private var showingViewerSearch = false
     @State private var selectedDevice: LabTopology.Device?
     @State private var selectedLink: LabTopology.Link?
     @State private var error: String?
     @GestureState private var lookDrag = CGSize.zero
-    @GestureState private var joystick = SIMD2<Float>.zero
+    @State private var joystick = SIMD2<Float>.zero
+    private var joystickAxes: SIMD2<Float> { LabWalkPose.joystickAxes(joystick) }
 
     init(mode: LabTravelMode, room: RoomStructure, layout: LabLayout, topology: LabTopology?,
-         showCables: Binding<Bool>, poweredOff: Set<String>, showTraffic: Binding<Bool>) {
+         showCables: Binding<Bool>, cableFilter: Binding<LabCableFilter?>, poweredOff: Set<String>, showTraffic: Binding<Bool>,
+         liveBase: (() -> LabTopology?)? = nil, save: ((LabTopology) throws -> Void)? = nil) {
         self.mode = mode
         self.room = room
         self.layout = layout
         baseTopology = topology
+        self.liveBase = liveBase
+        self.save = save
         _topology = State(initialValue: topology)
         _showCables = showCables
+        _cableFilter = cableFilter
         self.poweredOff = poweredOff
         _focusTargets = State(initialValue: LabFocusTarget.inventory(topology, in: layout))
         _showTraffic = showTraffic
@@ -83,6 +92,16 @@ struct LabTravelView: View {
                             .padding(.horizontal, 12).padding(.vertical, 9)
                             .modifier(ViewerSurface(radius: 24))
                         Spacer(minLength: 4)
+                        if mode == .walk && ready, let topology {
+                            if !topology.links.isEmpty {
+                                LabCableFilterMenu(topology: topology, layout: layout, filter: $cableFilter, showsCables: $showCables) {
+                                    traceID = nil
+                                }
+                            }
+                            if !topology.devices.isEmpty {
+                                icon("Buscar equipo o puerto", "magnifyingglass") { showingViewerSearch = true }
+                            }
+                        }
                         if mode == .vr {
                             icon(motionEnabled ? "Mirar con el dedo" : "Mirar moviendo el iPhone",
                                  motionEnabled ? "hand.draw" : "gyroscope") { motionEnabled.toggle() }
@@ -165,15 +184,19 @@ struct LabTravelView: View {
                     stereo = false
                 }
             }
-            .task(id: joystick != .zero && ready && scenePhase == .active) {
-                guard joystick != .zero, ready, scenePhase == .active else { return }
+            .task(id: joystickAxes != .zero && ready && scenePhase == .active
+                  && selectedDevice == nil && selectedLink == nil && !showingMonitors) {
+                guard joystickAxes != .zero, ready, scenePhase == .active,
+                      selectedDevice == nil, selectedLink == nil, !showingMonitors else { return }
                 let clock = ContinuousClock()
                 var last = clock.now
                 while !Task.isCancelled {
                     do { try await Task.sleep(for: .milliseconds(16)) } catch { break }
                     let now = clock.now
                     let elapsed = last.duration(to: now).components
-                    move(joystick, seconds: Float(elapsed.seconds) + Float(elapsed.attoseconds) / 1e18)
+                    let axes = joystickAxes
+                    guard !Task.isCancelled, axes != .zero else { return }
+                    move(axes, seconds: Float(elapsed.seconds) + Float(elapsed.attoseconds) / 1e18)
                     last = now
                 }
             }
@@ -183,22 +206,30 @@ struct LabTravelView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onChange(of: operations.revision, initial: true) {
-            topology = baseTopology.map(operations.configured)
-            topologyRevision &+= 1
-            focusTargets = LabFocusTarget.inventory(topology, in: layout)
-        }
+        .onChange(of: operations.revision, initial: true) { refreshTopology() }
+        .onChange(of: liveBase?()) { refreshTopology() }
         .sheet(isPresented: $showingMonitors) {
             if let baseTopology {
-                LabMonitorInventory(base: baseTopology, poweredOff: poweredOff) {
-                    showingMonitors = false
-                    locate($0)
+                NavigationStack {
+                    LabMonitorInventory(base: baseTopology, poweredOff: poweredOff) {
+                        showingMonitors = false
+                        locate($0)
+                    }.toolbar { DismissButton() }
                 }
             }
         }
         .sheet(item: $selectedDevice) { device in
             if let baseTopology {
-                LabDeviceSheet(device: device, base: baseTopology, poweredOff: poweredOff, onLocate: locate)
+                LabDeviceSheet(device: device, base: baseTopology, poweredOff: poweredOff, onLocate: locate,
+                               liveBase: liveBase, save: save)
+            }
+        }
+        .sheet(isPresented: $showingViewerSearch) {
+            if let topology {
+                LabViewerSearch(devices: topology.devices, layout: layout) { destination in
+                    traceID = nil
+                    locate(destination)
+                }
             }
         }
         .sheet(item: $selectedLink) { link in
@@ -209,6 +240,12 @@ struct LabTravelView: View {
                 }
             }
         }
+    }
+
+    private func refreshTopology() {
+        topology = (liveBase?() ?? baseTopology).map(operations.configured)
+        topologyRevision &+= 1
+        focusTargets = LabFocusTarget.inventory(topology, in: layout)
     }
 
     private var introducingLegend: Bool {
@@ -234,19 +271,10 @@ struct LabTravelView: View {
     }
 
     private var walkingControl: some View {
-        ZStack {
-            Circle().fill(.regularMaterial)
-            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right").font(.system(size: 43, weight: .ultraLight))
-                .foregroundStyle(.secondary)
-            Circle().fill(.tint).frame(width: 27, height: 27)
-                .offset(x: CGFloat(joystick.x * 26), y: CGFloat(-joystick.y * 26))
+        LabDirectionalJoystick(displacement: $joystick) { next in
+            let movement = LabWalkPose.joystickAxes(next)
+            if joystickAxes == .zero && movement != .zero { move(movement, seconds: 1 / 60) }
         }
-        .frame(width: 98, height: 98)
-        .contentShape(.circle)
-        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local).updating($joystick) { value, vector, _ in
-            let axes = SIMD2(Float(value.location.x - 49), Float(49 - value.location.y)) / 35
-            vector = axes / max(1, simd_length(axes))
-        })
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Moverse por la sala")
         .accessibilityAction(named: Text("Avanzar")) { accessibilityMove(SIMD2(0, 1)) }
@@ -291,6 +319,7 @@ struct LabTravelView: View {
         lockedID = destination.deviceID
         if let link = destination.linkID {
             showCables = true
+            if mode == .walk { cableFilter = nil }
             traceID = link
         }
         selectedLink = nil
@@ -301,14 +330,17 @@ struct LabTravelView: View {
         LabSceneView(room: room, layout: layout, arSession: nil, mode: .room, paintRoom: true,
                      poweredOff: baseTopology.map { poweredOff.union(operations.faults(in: $0)) } ?? poweredOff,
                      selection: .constant(nil), trackingMessage: $error,
-                     topology: topology, showCables: showCables, selectedLinkID: selectedLink?.id ?? traceID,
+                     topology: topology, showCables: showCables,
+                     visibleCableIDs: mode == .walk ? cableFilter.flatMap { topology?.visibleCableIDs(for: $0) } : nil,
+                     selectedLinkID: selectedLink?.id ?? traceID,
                      onSelectDevice: { id in selectedDevice = topology?.devices.first { $0.id == id } },
                      onSelectLink: { id in selectedLink = topology?.links.first { $0.id == id } },
                      inspectionDestination: inspectionDestination,
                      isForeground: scenePhase == .active && selectedDevice == nil && selectedLink == nil && !showingMonitors,
                      stereoEye: Float(side), virtualPose: looking(from: aimedPose, translation: lookDrag),
                      sceneReady: { _ = readyEyes.insert(side) },
-                     lockedDeviceID: lockedID, showTraffic: showTraffic, topologyRevision: topologyRevision)
+                     lockedDeviceID: lockedID, showTraffic: showTraffic, topologyRevision: topologyRevision,
+                     monitorConfigurations: baseTopology.map(operations.monitors) ?? [:])
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityHidden(true)
     }
@@ -353,7 +385,7 @@ struct LabTravelView: View {
 
     private func looking(from pose: LabWalkPose, translation: CGSize) -> LabWalkPose {
         var result = pose
-        result.look(horizontal: -Float(translation.width) * 0.005, vertical: Float(translation.height) * 0.005)
+        result.look(horizontal: Float(translation.width) * 0.005, vertical: Float(translation.height) * 0.005)
         return result
     }
 
@@ -498,7 +530,7 @@ private struct LabCableLegend: View {
 
     private var media: [LabTopology.Medium] {
         let used = Set(topology.links.map(\.medium))
-        return [.copper, .fiber, .console, .powerA, .powerB].filter { kind in
+        return [.copper, .fiber, .serial, .console, .powerA, .powerB].filter { kind in
             used.contains(kind) || (hasPower && (kind == .powerA || kind == .powerB))
         }
     }
@@ -585,5 +617,50 @@ struct LabTrafficLegend: View {
         } icon: {
             Image(systemName: arrow).fontWeight(.bold).foregroundStyle(color)
         }
+    }
+}
+
+struct LabDirectionalJoystick: View {
+    @Binding var displacement: SIMD2<Float>
+    var horizontalOnly = false
+    var verticalOnly = false
+    var onChange: (SIMD2<Float>) -> Void = { _ in }
+    @GestureState private var dragging = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let radius: Float = 29
+        ZStack {
+            Color.clear.modifier(ViewerSurface(radius: 49))
+            Image(systemName: horizontalOnly ? "arrow.left.and.right"
+                  : verticalOnly ? "arrow.up.and.down" : "arrow.up.and.down.and.arrow.left.and.right")
+                .font(.system(size: 43, weight: .light)).foregroundStyle(.secondary)
+            Circle().fill(.tint)
+                .overlay { Circle().strokeBorder(.white.opacity(0.75), lineWidth: 1) }
+                .frame(width: 32, height: 32)
+                .offset(x: CGFloat(displacement.x * radius), y: CGFloat(-displacement.y * radius))
+                .animation(displacement == .zero && !reduceMotion ? .spring(response: 0.23, dampingFraction: 0.92) : nil,
+                           value: displacement)
+        }
+        .frame(width: 98, height: 98)
+        .contentShape(.circle)
+        .gesture(DragGesture(minimumDistance: 0)
+            .updating($dragging) { _, active, _ in active = true }
+            .onChanged { value in
+                let y = horizontalOnly ? 0 : -Float(value.translation.height)
+                let axes = SIMD2(verticalOnly ? 0 : Float(value.translation.width), y) / radius
+                let next = axes / max(1, simd_length(axes))
+                onChange(next)
+                displacement = next
+            }
+            .onEnded { _ in reset() })
+        .onChange(of: dragging) { _, active in
+            if !active { reset() }
+        }
+    }
+
+    private func reset() {
+        onChange(.zero)
+        displacement = .zero
     }
 }

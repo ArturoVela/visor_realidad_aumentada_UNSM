@@ -1,0 +1,8 @@
+{
+  "name": "nexus-lab-catalog",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-30",
+  "d1_databases": [{ "binding": "DB", "database_name": "REEMPLAZA_BASE_D1", "database_id": "REEMPLAZA_ID_D1" }],
+  "r2_buckets": [{ "binding": "LABS", "bucket_name": "REEMPLAZA_BUCKET_R2" }],
+  "services": [{ "binding": "CONVERTER", "service": "nexus-lab-pkt-converter" }]
+}

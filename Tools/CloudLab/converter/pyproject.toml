@@ -1,0 +1,8 @@
+[project]
+name = "nexus-lab-pkt-converter"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["packet-tracer-pkt-format==0.4.1"]
+
+[dependency-groups]
+dev = ["workers-py==1.17.9", "workers-runtime-sdk==1.9.6"]

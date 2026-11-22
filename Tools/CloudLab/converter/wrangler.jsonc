@@ -1,0 +1,8 @@
+{
+  "name": "nexus-lab-pkt-converter",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": ["python_workers"],
+  "workers_dev": false,
+  "preview_urls": false
+}

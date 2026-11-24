@@ -86,7 +86,12 @@ final class NexusPeerSession: NSObject, @unchecked Sendable {
     var onCollaborationDataReceived: ((ARSession.CollaborationData) -> Void)?
 
     override init() {
+        #if targetEnvironment(simulator)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let deviceName = "\(UIDevice.current.name) [Sim \(pid % 1000)]"
+        #else
         let deviceName = UIDevice.current.name
+        #endif
         self.myPeerID = MCPeerID(displayName: deviceName)
         super.init()
         self.session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)

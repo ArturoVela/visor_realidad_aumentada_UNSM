@@ -3447,6 +3447,7 @@ private struct LaboratoryScreen: View {
                 pingBlockedLink: fairChallenge == nil ? ping?.blockedLink?.id : nil,
                 packetJourney: packetJourney,
                 onPacketHop: fairMode ? { (hop: Int) in packetHop = hop } : nil,
+                packetConcealsFailure: fairChallenge != nil,
                 onSelectDevice: { id in
                     if fairChallenge != nil { answerFairChallenge(deviceIDs: [id]) }
                     else { deviceSelection = topology?.devices.first { $0.id == id } }

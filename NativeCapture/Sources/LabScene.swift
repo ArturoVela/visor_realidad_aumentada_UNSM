@@ -69,6 +69,8 @@ struct LabSceneView: UIViewRepresentable {
     var pingBlockedLink: String? = nil
     var packetJourney: LabPacketJourney? = nil
     var onPacketHop: ((Int) -> Void)? = nil
+    /// Hides the failed device's name on its floating label, used by the fair challenge.
+    var packetConcealsFailure = false
     var onSelectDevice: (String) -> Void = { _ in }
     var onSelectLink: (String) -> Void = { _ in }
     var onInspectPort: ((LabTopology.Port) -> Void)? = nil
@@ -289,6 +291,11 @@ struct LabSceneView: UIViewRepresentable {
         private var packetCore: ModelEntity?
         private var packetHalo: ModelEntity?
         private var packetTask: Task<Void, Never>?
+        private var lastPacketConceals = false
+        private var packetTrail: [ModelEntity] = []
+        private var packetTrailHistory: [SIMD3<Float>] = []
+        private var packetLabels: [Entity] = []
+        private var packetLabelMaterials: [String: UnlitMaterial] = [:]
         private var lastInspectedPort: LabInspectionDestination?
         private var lastInspectionRevision: Int?
         private var linkBodies: [String: ModelEntity] = [:]
@@ -566,6 +573,7 @@ struct LabSceneView: UIViewRepresentable {
                 pingPaths.removeAll(); pingOverlay = nil
                 packetTask?.cancel(); packetTask = nil
                 packetEntity = nil; packetCore = nil; packetHalo = nil; lastPacketJourney = nil
+                packetTrail.removeAll(); packetTrailHistory.removeAll(); packetLabels.removeAll()
                 placementModels.removeAll(); placementShells.removeAll(); deviceModels.removeAll()
                 previewedPlacement = nil
                 failedRoomPreview = nil
@@ -2615,8 +2623,9 @@ struct LabSceneView: UIViewRepresentable {
                 lastPingBlockedLink = parent.pingBlockedLink
                 updatePingOverlay()
             }
-            if lastPacketJourney != parent.packetJourney {
+            if lastPacketJourney != parent.packetJourney || lastPacketConceals != parent.packetConcealsFailure {
                 lastPacketJourney = parent.packetJourney
+                lastPacketConceals = parent.packetConcealsFailure
                 updatePacketJourney()
             }
             if lastSelectedLinkID != parent.selectedLinkID || lastInspectedPort != parent.inspectionDestination {
@@ -3434,37 +3443,63 @@ struct LabSceneView: UIViewRepresentable {
         private struct PacketLeg {
             let route: LabTrafficRoute?
             let dies: Bool
+            /// Text of the floating label shown when the packet reaches the end of this leg; nil for patch panels.
+            let label: String?
+            let role: PacketLabelRole
         }
 
+        private enum PacketPhase { case outbound, reply, failed }
+        private enum PacketLabelRole { case source, stop, destination, failure }
+
+        private static let trailLength = 14
+
         /// Animates one visible packet along the ping route, hop by hop, then its reply back to the source.
+        /// A fading trail follows the packet and a floating label names each device it reaches.
         private func updatePacketJourney() {
             packetTask?.cancel()
             packetTask = nil
             packetEntity?.removeFromParent()
             packetEntity = nil; packetCore = nil; packetHalo = nil
+            packetTrail.forEach { $0.removeFromParent() }
+            packetTrail.removeAll(); packetTrailHistory.removeAll()
+            clearPacketLabels()
             guard let journey = parent.packetJourney, let cablesEntity else { return }
             // Ride on top of the ping overlay, which is lifted by the same amount.
             let lift = SIMD3<Float>(0, 0.10, 0)
-            let legs = journey.hops.map { hop -> PacketLeg in
+            let conceals = parent.packetConcealsFailure
+            var stop = 0
+            let legs = journey.hops.enumerated().map { index, hop -> PacketLeg in
                 let points = pingPaths[hop.linkID].map { path in (hop.reversed ? Array(path.reversed()) : path).map { $0 + lift } }
-                return PacketLeg(route: points.flatMap { LabTrafficRoute([$0]) }, dies: hop.dies)
+                let last = index == journey.hops.count - 1
+                let role: PacketLabelRole = hop.dies ? .failure : (last && !journey.blocked ? .destination : .stop)
+                var label: String?
+                if hop.dies {
+                    label = conceals ? "✕ ¿Qué falló aquí?" : "✕ " + hop.deviceName
+                } else if !hop.passive {
+                    stop += 1
+                    label = role == .destination ? "Destino · " + hop.deviceName : "\(stop) · " + hop.deviceName
+                }
+                return PacketLeg(route: points.flatMap { LabTrafficRoute([$0]) }, dies: hop.dies, label: label, role: role)
             }
-            guard legs.contains(where: { $0.route != nil }) else { return }
+            guard let start = legs.compactMap(\.route).first?.point(at: 0) else { return }
 
             let core = ModelEntity(mesh: .generateSphere(radius: 0.055), materials: [packetMaterial(.outbound)])
-            var glow = packetMaterial(.outbound)
-            glow.blending = .transparent(opacity: 0.28)
-            let halo = ModelEntity(mesh: .generateSphere(radius: 0.11), materials: [glow])
+            let halo = ModelEntity(mesh: .generateSphere(radius: 0.11), materials: [packetMaterial(.outbound, opacity: 0.28)])
             let packet = Entity()
             packet.name = "nexus-packet"
             packet.addChild(halo)
             packet.addChild(core)
-            packet.position = legs.compactMap(\.route).first?.point(at: 0) ?? .zero
+            packet.position = start
             cablesEntity.addChild(packet)
             packetEntity = packet; packetCore = core; packetHalo = halo
 
             if parent.reduceMotion {
-                // Without motion, show where the packet ends: at the failure or at the destination.
+                // Without motion, show the whole route labelled and the packet where it ends.
+                showPacketLabel("Origen · " + journey.sourceName, role: .source, at: start, index: 0, animated: false)
+                for (index, leg) in legs.enumerated() {
+                    guard let route = leg.route else { continue }
+                    if let label = leg.label { showPacketLabel(label, role: leg.role, at: route.point(at: leg.dies ? 0.5 : 1), index: index + 1, animated: false) }
+                }
                 if let last = legs.last(where: { $0.route != nil }), let route = last.route {
                     packet.position = route.point(at: last.dies ? 0.5 : 1)
                     if last.dies { paintPacket(.failed) }
@@ -3472,29 +3507,131 @@ struct LabSceneView: UIViewRepresentable {
                 notifyPacketHop(journey.hops.count)
                 return
             }
+
+            for index in 0..<Self.trailLength {
+                let fraction = 1 - Float(index) / Float(Self.trailLength)
+                let dot = ModelEntity(mesh: .generateSphere(radius: 0.012 + 0.036 * fraction), materials: [])
+                dot.position = start
+                cablesEntity.addChild(dot)
+                packetTrail.append(dot)
+            }
+            paintPacket(.outbound)
             let blocked = journey.blocked
+            let source = journey.sourceName
             packetTask = Task { @MainActor [weak self] in
-                await self?.runPacket(legs, blocked: blocked)
+                await self?.runPacket(legs, source: source, blocked: blocked)
             }
         }
 
-        private enum PacketPhase { case outbound, reply, failed }
-
-        private func packetMaterial(_ phase: PacketPhase) -> UnlitMaterial {
-            var material = UnlitMaterial()
+        private func packetColor(_ phase: PacketPhase) -> UIColor {
             switch phase {
-            case .outbound: material.color = .init(tint: UIColor(red: 0.18, green: 0.72, blue: 1, alpha: 1))
-            case .reply: material.color = .init(tint: UIColor(red: 0.2, green: 0.92, blue: 0.45, alpha: 1))
-            case .failed: material.color = .init(tint: .systemRed)
+            case .outbound: UIColor(red: 0.18, green: 0.72, blue: 1, alpha: 1)
+            case .reply: UIColor(red: 0.2, green: 0.92, blue: 0.45, alpha: 1)
+            case .failed: .systemRed
             }
+        }
+
+        private func packetMaterial(_ phase: PacketPhase, opacity: Float = 1) -> UnlitMaterial {
+            var material = UnlitMaterial()
+            material.color = .init(tint: packetColor(phase))
+            if opacity < 1 { material.blending = .transparent(opacity: .init(scale: opacity)) }
             return material
         }
 
         private func paintPacket(_ phase: PacketPhase) {
             packetCore?.model?.materials = [packetMaterial(phase)]
-            var glow = packetMaterial(phase)
-            glow.blending = .transparent(opacity: 0.28)
-            packetHalo?.model?.materials = [glow]
+            packetHalo?.model?.materials = [packetMaterial(phase, opacity: 0.28)]
+            for (index, dot) in packetTrail.enumerated() {
+                let fraction = 1 - Float(index) / Float(Self.trailLength)
+                dot.model?.materials = [packetMaterial(phase, opacity: 0.08 + 0.55 * fraction * fraction)]
+            }
+        }
+
+        /// Moves the packet and lets the trail follow the positions it just left.
+        private func placePacket(at position: SIMD3<Float>) {
+            packetEntity?.position = position
+            guard !packetTrail.isEmpty else { return }
+            packetTrailHistory.insert(position, at: 0)
+            let spacing = 2
+            if packetTrailHistory.count > packetTrail.count * spacing + 1 { packetTrailHistory.removeLast() }
+            for (index, dot) in packetTrail.enumerated() {
+                let sample = min((index + 1) * spacing, packetTrailHistory.count - 1)
+                dot.position = packetTrailHistory[sample]
+            }
+        }
+
+        private func resetTrail(at position: SIMD3<Float>) {
+            packetTrailHistory = [position]
+            packetTrail.forEach { $0.position = position }
+        }
+
+        private func clearPacketLabels() {
+            packetLabels.forEach { $0.removeFromParent() }
+            packetLabels.removeAll()
+        }
+
+        /// A rounded label that floats over a device, joined to it by a thin line, and always faces the viewer.
+        private func showPacketLabel(_ text: String, role: PacketLabelRole, at point: SIMD3<Float>, index: Int,
+                                     animated: Bool = true) {
+            guard let cablesEntity, let material = packetLabelMaterial(text, role: role) else { return }
+            let height: Float = 0.15
+            let aspect = Float(material.color.texture.map { $0.resource.width } ?? 4) /
+                Float(material.color.texture.map { $0.resource.height } ?? 1)
+            // Alternate heights so labels of neighbouring devices in a rack do not overlap.
+            let rise: Float = index.isMultiple(of: 2) ? 0.34 : 0.56
+            let group = Entity()
+            group.name = "nexus-packet-label"
+            group.position = point
+            var stemMaterial = UnlitMaterial()
+            stemMaterial.color = .init(tint: labelTint(role).withAlphaComponent(1))
+            let stem = ModelEntity(mesh: .generateBox(width: 0.008, height: rise, depth: 0.008), materials: [stemMaterial])
+            stem.position = SIMD3(0, rise / 2, 0)
+            let plate = ModelEntity(mesh: .generatePlane(width: height * aspect, height: height), materials: [material])
+            plate.position = SIMD3(0, rise + height / 2, 0)
+            if #available(iOS 18.0, *) { plate.components.set(BillboardComponent()) }
+            group.addChild(stem)
+            group.addChild(plate)
+            cablesEntity.addChild(group)
+            packetLabels.append(group)
+            if animated {
+                group.scale = SIMD3(repeating: 0.2)
+                var target = group.transform
+                target.scale = .one
+                group.move(to: target, relativeTo: group.parent, duration: 0.22, timingFunction: .easeOut)
+            }
+        }
+
+        private func labelTint(_ role: PacketLabelRole) -> UIColor {
+            switch role {
+            case .source: UIColor(white: 0.18, alpha: 0.92)
+            case .stop: UIColor(red: 0.05, green: 0.42, blue: 0.85, alpha: 0.92)
+            case .destination: UIColor(red: 0.1, green: 0.62, blue: 0.3, alpha: 0.95)
+            case .failure: UIColor(red: 0.82, green: 0.12, blue: 0.12, alpha: 0.95)
+            }
+        }
+
+        private func packetLabelMaterial(_ text: String, role: PacketLabelRole) -> UnlitMaterial? {
+            let key = "\(role)|\(text)"
+            if let cached = packetLabelMaterials[key] { return cached }
+            let font = UIFont.systemFont(ofSize: 56, weight: .bold)
+            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+            let textWidth = ceil((text as NSString).size(withAttributes: attributes).width)
+            let size = CGSize(width: min(1400, textWidth + 64), height: 96)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = false
+            let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+                labelTint(role).setFill()
+                UIBezierPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2).fill()
+                (text as NSString).draw(at: CGPoint(x: 32, y: (size.height - font.lineHeight) / 2), withAttributes: attributes)
+            }
+            guard let cgImage = image.cgImage,
+                  let texture = try? TextureResource.generate(from: cgImage, options: .init(semantic: .color)) else { return nil }
+            var material = UnlitMaterial()
+            material.color = .init(tint: .white, texture: .init(texture))
+            material.blending = .transparent(opacity: .init(scale: 1))
+            packetLabelMaterials[key] = material
+            return material
         }
 
         private func notifyPacketHop(_ value: Int) {
@@ -3510,13 +3647,13 @@ struct LabSceneView: UIViewRepresentable {
                 let t = Float(min(1, (ProcessInfo.processInfo.systemUptime - began) / duration))
                 // Ease in and out so each hop reads as a separate step.
                 let eased = t * t * (3 - 2 * t)
-                packetEntity?.position = route.point(at: start + (end - start) * eased)
+                placePacket(at: route.point(at: start + (end - start) * eased))
                 if t >= 1 { return true }
                 do { try await Task.sleep(for: .milliseconds(16)) } catch { return false }
             }
         }
 
-        /// Briefly enlarges the packet when it reaches a device.
+        /// Briefly enlarges the packet when it reaches a device while the trail catches up.
         private func pop(times: Int = 1, duration: Double = 0.24) async -> Bool {
             for _ in 0..<times {
                 let began = ProcessInfo.processInfo.systemUptime
@@ -3524,6 +3661,7 @@ struct LabSceneView: UIViewRepresentable {
                     let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
                     let bump = Float(sin(t * .pi)) * 0.6
                     packetEntity?.scale = SIMD3(repeating: 1 + bump)
+                    if let position = packetEntity?.position { placePacket(at: position) }
                     if t >= 1 { break }
                     do { try await Task.sleep(for: .milliseconds(16)) } catch { return false }
                 }
@@ -3532,16 +3670,24 @@ struct LabSceneView: UIViewRepresentable {
             return true
         }
 
-        private func runPacket(_ legs: [PacketLeg], blocked: Bool) async {
-            let speed: Float = 1.6
+        private func runPacket(_ legs: [PacketLeg], source: String, blocked: Bool) async {
+            let speed: Float = 1.4
             while !Task.isCancelled {
+                clearPacketLabels()
                 paintPacket(.outbound)
-                if let first = legs.compactMap(\.route).first { packetEntity?.position = first.point(at: 0) }
+                guard let first = legs.compactMap(\.route).first else { return }
+                let start = first.point(at: 0)
+                packetEntity?.position = start
+                resetTrail(at: start)
+                showPacketLabel("Origen · " + source, role: .source, at: start, index: 0)
                 notifyPacketHop(0)
                 guard await pop() else { return }
                 for (index, leg) in legs.enumerated() {
                     if let route = leg.route {
                         guard await travel(route, from: 0, to: leg.dies ? 0.5 : 1, speed: speed) else { return }
+                        if let label = leg.label {
+                            showPacketLabel(label, role: leg.role, at: route.point(at: leg.dies ? 0.5 : 1), index: index + 1)
+                        }
                     }
                     notifyPacketHop(index + 1)
                     if leg.dies {
@@ -3561,7 +3707,8 @@ struct LabSceneView: UIViewRepresentable {
                     }
                     guard await pop() else { return }
                 }
-                do { try await Task.sleep(for: .seconds(1.4)) } catch { return }
+                // Leave the labelled route on screen for a moment before the next packet.
+                do { try await Task.sleep(for: .seconds(2.2)) } catch { return }
             }
         }
 

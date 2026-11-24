@@ -60,7 +60,7 @@ cubre montaje, VLAN, servicios y automatizaciones.
 | Colocar una maqueta | Demo e importaciones ofrecen AR 1:10: apunta a una superficie y toca para colocarla. |
 | Inspeccionar la red | Consulta equipos, puertos, extremos, IPv4, VLAN y configuración importada disponible. |
 | Seguir un cable | Apunta a un cable o puerto y pulsa **¿Adónde va?**. El visor resalta el recorrido y muestra equipo, puerto y rack de ambos extremos. |
-| Ver viajar un paquete | Cada ping muestra un paquete luminoso que recorre los cables equipo por equipo. Vuelve en verde como respuesta o se pone rojo donde la red falla. |
+| Ver viajar un paquete | Cada ping muestra un paquete luminoso con una estela que recorre los cables equipo por equipo. Sobre cada equipo aparece una etiqueta flotante numerada (Origen, 1, 2… Destino). El paquete vuelve en verde como respuesta o se pone rojo donde la red falla. |
 | Hablar con el laboratorio | Pulsa 🎙️ y pregunta en voz alta: «¿La PC 1 llega al servidor?», «¿Dónde está el firewall?», «Apaga el switch de acceso». **Nexus** responde con voz y actúa en la escena: lanza el paquete, lleva la cámara al equipo o lo apaga. Usa la IA de Apple en el iPhone (sin internet) y, si no está disponible, un intérprete de comandos en español. |
 | Modo feria | Envía paquetes entre equipos al azar y juega el reto **Encuentra la falla**: un equipo se apaga y el visitante tiene 60 segundos para tocarlo. Guarda un ranking local de los cinco mejores tiempos. |
 | Recorrer en primera persona | Camina en 3D con el control de movimiento. Modo VR en el teléfono vertical u horizontal, con vista estereoscópica opcional en horizontal. |

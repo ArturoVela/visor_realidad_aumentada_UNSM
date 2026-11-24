@@ -227,6 +227,8 @@ Desde NativeCapture/:
     /tmp/nexus-lab-topology-check
     /usr/bin/xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/LabImport.swift Tests/LabImportCheck.swift -o /tmp/nexus-lab-import-check
     /tmp/nexus-lab-import-check
+    /usr/bin/xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/FairMode.swift Tests/LabFairCheck.swift -o /tmp/nexus-fair-check
+    /tmp/nexus-fair-check
     /usr/bin/xcodebuild -project NexusRoomCapture.xcodeproj -scheme NexusRoomCapture -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/NexusRoomCaptureDerivedData CODE_SIGNING_ALLOWED=NO build
 
 Checks de geometría/topología admiten captura real opcional como primer argumento.

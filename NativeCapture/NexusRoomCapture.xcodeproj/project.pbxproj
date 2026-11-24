@@ -28,6 +28,8 @@
 		A0000000000000000000001F /* Catalyst2960Inspection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001F /* Catalyst2960Inspection.swift */; };
 		A00000000000000000000020 /* LabCollaboration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000020 /* LabCollaboration.swift */; };
 		A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* CollaborativeSessionView.swift */; };
+		A00000000000000000000022 /* FairMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000022 /* FairMode.swift */; };
+		A00000000000000000000023 /* FairModePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000023 /* FairModePanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +55,8 @@
 		B0000000000000000000001F /* Catalyst2960Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalyst2960Inspection.swift; sourceTree = "<group>"; };
 		B00000000000000000000020 /* LabCollaboration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabCollaboration.swift; sourceTree = "<group>"; };
 		B00000000000000000000021 /* CollaborativeSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollaborativeSessionView.swift; sourceTree = "<group>"; };
+		B00000000000000000000022 /* FairMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairMode.swift; sourceTree = "<group>"; };
+		B00000000000000000000023 /* FairModePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairModePanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +102,8 @@
 				B0000000000000000000001F /* Catalyst2960Inspection.swift */,
 				B00000000000000000000020 /* LabCollaboration.swift */,
 				B00000000000000000000021 /* CollaborativeSessionView.swift */,
+				B00000000000000000000022 /* FairMode.swift */,
+				B00000000000000000000023 /* FairModePanel.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -200,6 +206,8 @@
 				A0000000000000000000001F /* Catalyst2960Inspection.swift in Sources */,
 				A00000000000000000000020 /* LabCollaboration.swift in Sources */,
 				A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */,
+				A00000000000000000000022 /* FairMode.swift in Sources */,
+				A00000000000000000000023 /* FairModePanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

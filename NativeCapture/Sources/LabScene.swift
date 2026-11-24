@@ -67,6 +67,8 @@ struct LabSceneView: UIViewRepresentable {
     var selectedLinkID: String? = nil
     var pingLinks: Set<String> = []
     var pingBlockedLink: String? = nil
+    var packetJourney: LabPacketJourney? = nil
+    var onPacketHop: ((Int) -> Void)? = nil
     var onSelectDevice: (String) -> Void = { _ in }
     var onSelectLink: (String) -> Void = { _ in }
     var onInspectPort: ((LabTopology.Port) -> Void)? = nil
@@ -282,6 +284,11 @@ struct LabSceneView: UIViewRepresentable {
         private var lastPingBlockedLink: String?
         private var pingPaths: [String: [SIMD3<Float>]] = [:]
         private var pingOverlay: Entity?
+        private var lastPacketJourney: LabPacketJourney?
+        private var packetEntity: Entity?
+        private var packetCore: ModelEntity?
+        private var packetHalo: ModelEntity?
+        private var packetTask: Task<Void, Never>?
         private var lastInspectedPort: LabInspectionDestination?
         private var lastInspectionRevision: Int?
         private var linkBodies: [String: ModelEntity] = [:]
@@ -430,6 +437,7 @@ struct LabSceneView: UIViewRepresentable {
             waypointGrip = nil
             prepareTask?.cancel()
             trafficTask?.cancel()
+            packetTask?.cancel()
             tierCableTask?.cancel()
             roomCablingTask?.cancel()
             assemblyRoutingTask?.cancel()
@@ -556,6 +564,8 @@ struct LabSceneView: UIViewRepresentable {
                 portHits.removeAll(); devicePowerParents.removeAll(); linkBodies.removeAll(); tracedCables.removeAll()
                 linkEntities.removeAll(); cableGuides = nil; lastVisibleCableIDs = nil
                 pingPaths.removeAll(); pingOverlay = nil
+                packetTask?.cancel(); packetTask = nil
+                packetEntity = nil; packetCore = nil; packetHalo = nil; lastPacketJourney = nil
                 placementModels.removeAll(); placementShells.removeAll(); deviceModels.removeAll()
                 previewedPlacement = nil
                 failedRoomPreview = nil
@@ -1816,6 +1826,7 @@ struct LabSceneView: UIViewRepresentable {
                         lastVisibleCableIDs = nil
                         updateTraceAndPortLabels()
                         updatePingOverlay()
+                        updatePacketJourney()
                         updateState()
                     }
                     try installCables(plan, for: topology, in: container, models: models)
@@ -1875,6 +1886,7 @@ struct LabSceneView: UIViewRepresentable {
                     tierCableTask = nil
                     updateTraceAndPortLabels()
                     updatePingOverlay()
+                    updatePacketJourney()
                     configureTraffic()
                 } catch is CancellationError {
                 } catch {
@@ -2602,6 +2614,10 @@ struct LabSceneView: UIViewRepresentable {
                 lastPingLinks = parent.pingLinks
                 lastPingBlockedLink = parent.pingBlockedLink
                 updatePingOverlay()
+            }
+            if lastPacketJourney != parent.packetJourney {
+                lastPacketJourney = parent.packetJourney
+                updatePacketJourney()
             }
             if lastSelectedLinkID != parent.selectedLinkID || lastInspectedPort != parent.inspectionDestination {
                 lastSelectedLinkID = parent.selectedLinkID
@@ -3413,6 +3429,140 @@ struct LabSceneView: UIViewRepresentable {
             }
             cablesEntity.addChild(overlay)
             pingOverlay = overlay
+        }
+
+        private struct PacketLeg {
+            let route: LabTrafficRoute?
+            let dies: Bool
+        }
+
+        /// Animates one visible packet along the ping route, hop by hop, then its reply back to the source.
+        private func updatePacketJourney() {
+            packetTask?.cancel()
+            packetTask = nil
+            packetEntity?.removeFromParent()
+            packetEntity = nil; packetCore = nil; packetHalo = nil
+            guard let journey = parent.packetJourney, let cablesEntity else { return }
+            // Ride on top of the ping overlay, which is lifted by the same amount.
+            let lift = SIMD3<Float>(0, 0.10, 0)
+            let legs = journey.hops.map { hop -> PacketLeg in
+                let points = pingPaths[hop.linkID].map { path in (hop.reversed ? Array(path.reversed()) : path).map { $0 + lift } }
+                return PacketLeg(route: points.flatMap { LabTrafficRoute([$0]) }, dies: hop.dies)
+            }
+            guard legs.contains(where: { $0.route != nil }) else { return }
+
+            let core = ModelEntity(mesh: .generateSphere(radius: 0.055), materials: [packetMaterial(.outbound)])
+            var glow = packetMaterial(.outbound)
+            glow.blending = .transparent(opacity: 0.28)
+            let halo = ModelEntity(mesh: .generateSphere(radius: 0.11), materials: [glow])
+            let packet = Entity()
+            packet.name = "nexus-packet"
+            packet.addChild(halo)
+            packet.addChild(core)
+            packet.position = legs.compactMap(\.route).first?.point(at: 0) ?? .zero
+            cablesEntity.addChild(packet)
+            packetEntity = packet; packetCore = core; packetHalo = halo
+
+            if parent.reduceMotion {
+                // Without motion, show where the packet ends: at the failure or at the destination.
+                if let last = legs.last(where: { $0.route != nil }), let route = last.route {
+                    packet.position = route.point(at: last.dies ? 0.5 : 1)
+                    if last.dies { paintPacket(.failed) }
+                }
+                notifyPacketHop(journey.hops.count)
+                return
+            }
+            let blocked = journey.blocked
+            packetTask = Task { @MainActor [weak self] in
+                await self?.runPacket(legs, blocked: blocked)
+            }
+        }
+
+        private enum PacketPhase { case outbound, reply, failed }
+
+        private func packetMaterial(_ phase: PacketPhase) -> UnlitMaterial {
+            var material = UnlitMaterial()
+            switch phase {
+            case .outbound: material.color = .init(tint: UIColor(red: 0.18, green: 0.72, blue: 1, alpha: 1))
+            case .reply: material.color = .init(tint: UIColor(red: 0.2, green: 0.92, blue: 0.45, alpha: 1))
+            case .failed: material.color = .init(tint: .systemRed)
+            }
+            return material
+        }
+
+        private func paintPacket(_ phase: PacketPhase) {
+            packetCore?.model?.materials = [packetMaterial(phase)]
+            var glow = packetMaterial(phase)
+            glow.blending = .transparent(opacity: 0.28)
+            packetHalo?.model?.materials = [glow]
+        }
+
+        private func notifyPacketHop(_ value: Int) {
+            guard parent.onPacketHop != nil else { return }
+            Task { @MainActor [weak self] in self?.parent.onPacketHop?(value) }
+        }
+
+        /// Moves the packet along one leg. Returns false when the animation was cancelled.
+        private func travel(_ route: LabTrafficRoute, from start: Float, to end: Float, speed: Float) async -> Bool {
+            let duration = max(0.45, Double(route.length * abs(end - start) / speed))
+            let began = ProcessInfo.processInfo.systemUptime
+            while true {
+                let t = Float(min(1, (ProcessInfo.processInfo.systemUptime - began) / duration))
+                // Ease in and out so each hop reads as a separate step.
+                let eased = t * t * (3 - 2 * t)
+                packetEntity?.position = route.point(at: start + (end - start) * eased)
+                if t >= 1 { return true }
+                do { try await Task.sleep(for: .milliseconds(16)) } catch { return false }
+            }
+        }
+
+        /// Briefly enlarges the packet when it reaches a device.
+        private func pop(times: Int = 1, duration: Double = 0.24) async -> Bool {
+            for _ in 0..<times {
+                let began = ProcessInfo.processInfo.systemUptime
+                while true {
+                    let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / duration)
+                    let bump = Float(sin(t * .pi)) * 0.6
+                    packetEntity?.scale = SIMD3(repeating: 1 + bump)
+                    if t >= 1 { break }
+                    do { try await Task.sleep(for: .milliseconds(16)) } catch { return false }
+                }
+            }
+            packetEntity?.scale = .one
+            return true
+        }
+
+        private func runPacket(_ legs: [PacketLeg], blocked: Bool) async {
+            let speed: Float = 1.6
+            while !Task.isCancelled {
+                paintPacket(.outbound)
+                if let first = legs.compactMap(\.route).first { packetEntity?.position = first.point(at: 0) }
+                notifyPacketHop(0)
+                guard await pop() else { return }
+                for (index, leg) in legs.enumerated() {
+                    if let route = leg.route {
+                        guard await travel(route, from: 0, to: leg.dies ? 0.5 : 1, speed: speed) else { return }
+                    }
+                    notifyPacketHop(index + 1)
+                    if leg.dies {
+                        paintPacket(.failed)
+                        guard await pop(times: 3, duration: 0.32) else { return }
+                        break
+                    }
+                    guard await pop() else { return }
+                }
+                if !blocked {
+                    // The echo reply returns along the same route.
+                    paintPacket(.reply)
+                    notifyPacketHop(legs.count + 1)
+                    for leg in legs.reversed() {
+                        guard let route = leg.route else { continue }
+                        guard await travel(route, from: 1, to: 0, speed: speed * 1.6) else { return }
+                    }
+                    guard await pop() else { return }
+                }
+                do { try await Task.sleep(for: .seconds(1.4)) } catch { return }
+            }
         }
 
         private func focusOrbit(on destination: LabInspectionDestination, in topology: LabTopology) {

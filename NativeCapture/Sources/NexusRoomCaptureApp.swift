@@ -39,6 +39,12 @@ private struct LaboratoryScreen: View {
     @State private var inspectedPDU: RackPowerInspection?
     @State private var negotiatingLink: String?
     @State private var pingSelection: PingSelection?
+    @State private var packetHop = 0
+    @State private var fairMode = false
+    @State private var fairChallenge: LabFairChallenge?
+    @State private var fairOutcome: LabFairOutcome?
+    @State private var fairMessage: String?
+    @State private var fairScores: [LabFairScore] = []
     @State private var inspectionDestination: LabInspectionDestination?
     @State private var inspectionRevision = 0
     @State private var lockedDeviceID: String?
@@ -1133,6 +1139,94 @@ private struct LaboratoryScreen: View {
     private var pendingSignalDevices: Set<String> {
         guard let topology = currentTopology, let layout = currentLayout else { return [] }
         return topology.pendingSignalDevices(in: layout, assembly: activeAssembly)
+    }
+
+    // MARK: Fair mode
+
+    private func openFairMode() {
+        fairScores = LabFairLeaderboard.load()
+        fairOutcome = nil
+        fairMessage = nil
+        deviceSelection = nil
+        linkSelection = nil
+        tracedLinkID = nil
+        fairMode = true
+        sendFairPacket()
+    }
+
+    private func closeFairMode() {
+        if let fairChallenge { poweredOff.remove(fairChallenge.faultID) }
+        fairChallenge = nil
+        fairOutcome = nil
+        fairMessage = nil
+        fairMode = false
+        pingSelection = nil
+    }
+
+    private func sendFairPacket() {
+        guard let topology = currentTopology else { return }
+        var generator = SystemRandomNumberGenerator()
+        let routes = LabFairPlanner.routes(in: topology, poweredOff: effectivePoweredOff, using: &generator)
+        guard let route = LabFairPlanner.showcase(routes, using: &generator) else {
+            fairMessage = "No encontré dos equipos con una conexión activa para enviar un paquete."
+            return
+        }
+        fairMessage = nil
+        fairOutcome = nil
+        packetHop = 0
+        showPingInScene(route.source.id, route.destination.id)
+    }
+
+    private func startFairChallenge() {
+        guard let topology = currentTopology else { return }
+        if let previous = fairChallenge { poweredOff.remove(previous.faultID) }
+        fairChallenge = nil
+        var generator = SystemRandomNumberGenerator()
+        guard let challenge = LabFairPlanner.challenge(in: topology, poweredOff: effectivePoweredOff, using: &generator) else {
+            fairOutcome = nil
+            fairMessage = "Este laboratorio no tiene una ruta con equipos intermedios para el reto. Prueba con la Plantilla Tier IV o el HomeLab."
+            return
+        }
+        fairMessage = nil
+        fairOutcome = nil
+        deviceSelection = nil
+        linkSelection = nil
+        tracedLinkID = nil
+        packetHop = 0
+        poweredOff.insert(challenge.faultID)
+        fairChallenge = challenge
+        showPingInScene(challenge.source, challenge.destination)
+    }
+
+    private func answerFairChallenge(deviceIDs: [String] = [], placementID: String? = nil) {
+        guard var challenge = fairChallenge else { return }
+        if deviceIDs.contains(challenge.faultID) || placementID == challenge.faultPlacementID {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            finishFairChallenge(timedOut: false)
+        } else {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            challenge.misses += 1
+            fairChallenge = challenge
+        }
+    }
+
+    private func finishFairChallenge(timedOut: Bool) {
+        guard let challenge = fairChallenge else { return }
+        // Repair the device. The same ping stays selected, so the packet now reaches its destination.
+        poweredOff.remove(challenge.faultID)
+        fairChallenge = nil
+        if timedOut {
+            fairOutcome = .timeout(faultName: challenge.faultName)
+            locateInScene(.init(deviceID: challenge.faultID))
+        } else {
+            fairOutcome = .found(seconds: Date.now.timeIntervalSince(challenge.started), faultName: challenge.faultName,
+                                 misses: challenge.misses)
+        }
+    }
+
+    private func saveFairScore(_ name: String) {
+        guard case .found(let seconds, _, _) = fairOutcome else { return }
+        fairScores = LabFairLeaderboard.record(.init(name: name, seconds: seconds, date: .now))
     }
 
     private func showPingInScene(_ source: String, _ destination: String) {
@@ -3300,6 +3394,7 @@ private struct LaboratoryScreen: View {
         let footprint = arFootprint(in: layout, topology: topology)
         let session = previewProject == nil && activeAssembly == nil ? capture.arSession : previewSession
         let ping = scenePing(in: topology)
+        let packetJourney = ping.flatMap { diagnosis in topology.flatMap { LabPacketJourney(diagnosis: diagnosis, topology: $0) } }
         let identity = LaboratorySceneID(room: room.roomID, mode: mode,
                                          session: mode == .ar ? session.map(ObjectIdentifier.init) : nil,
                                          roomRevision: mode == .room ? cameraRevision + sceneReload : 0)
@@ -3315,10 +3410,26 @@ private struct LaboratoryScreen: View {
                 topology: topology, showCables: activeAssembly.map { tracedLinkID != nil || ($0.showsCables ?? true) } ?? showCables,
                 visibleCableIDs: mode == .room ? cableFilter.flatMap { topology?.visibleCableIDs(for: $0) } : nil,
                 selectedLinkID: linkSelection?.id ?? tracedLinkID,
-                pingLinks: Set(ping?.path?.links.map(\.id) ?? []), pingBlockedLink: ping?.blockedLink?.id,
-                onSelectDevice: { id in deviceSelection = topology?.devices.first { $0.id == id } },
-                onSelectLink: { id in inspect(.link(id), topology: topology, layout: layout) },
-                onInspectPort: { inspectedPort = $0 },
+                pingLinks: Set(ping?.path?.links.map(\.id) ?? []),
+                // During the fair challenge the red segment would reveal the answer; the packet is the only hint.
+                pingBlockedLink: fairChallenge == nil ? ping?.blockedLink?.id : nil,
+                packetJourney: packetJourney,
+                onPacketHop: fairMode ? { (hop: Int) in packetHop = hop } : nil,
+                onSelectDevice: { id in
+                    if fairChallenge != nil { answerFairChallenge(deviceIDs: [id]) }
+                    else { deviceSelection = topology?.devices.first { $0.id == id } }
+                },
+                onSelectLink: { id in
+                    if fairChallenge != nil {
+                        if let link = topology?.links.first(where: { $0.id == id }) {
+                            answerFairChallenge(deviceIDs: [link.fromDeviceID, link.toDeviceID])
+                        }
+                    } else { inspect(.link(id), topology: topology, layout: layout) }
+                },
+                onInspectPort: { port in
+                    if fairChallenge != nil { answerFairChallenge(deviceIDs: [port.deviceID]) }
+                    else { inspectedPort = port }
+                },
                 onInspectPDU: { inspectedPDU = .init(rack: $0, circuit: $1, outlet: $2) },
                 sceneScale: mode == .ar && activeAssembly == nil ? arScale.factor : 1,
                 arPlacementRequired: (previewProject != nil || activeAssembly != nil) && mode == .ar && !usesCapturedARSession,
@@ -3364,6 +3475,14 @@ private struct LaboratoryScreen: View {
                 .id(identity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
                 .ignoresSafeArea(.container, edges: fullScreen3D ? .all : [])
+                .onChange(of: selection) {
+                    // In the challenge, touching the rack or desk that holds the failed device also counts.
+                    guard fairChallenge != nil, let placement = selection else { return }
+                    selection = nil
+                    answerFairChallenge(placementID: placement.id)
+                }
+                .onChange(of: mode) { if fairMode { closeFairMode() } }
+                .onChange(of: layout3DScope) { if fairMode { closeFairMode() } }
                 .overlay {
                     if mode == .room, let trackingMessage {
                         VStack(alignment: .leading, spacing: 8) {
@@ -3438,7 +3557,7 @@ private struct LaboratoryScreen: View {
                                         }
                                         .accessibilityLabel(assemblyCableConfirmation)
                                         .font(.caption.weight(.semibold)).padding(8).modifier(ViewerSurface(radius: 12))
-                                    } else if let ping {
+                                    } else if let ping, !fairMode {
                                         ScenePingStatus(diagnosis: ping) { pingSelection = nil }
                                     } else if !simulationEnabled {
                                         Label("Simulación en pausa", systemImage: "pause.circle")
@@ -3491,6 +3610,20 @@ private struct LaboratoryScreen: View {
                         .modifier(ViewerSurface(radius: 18, material: .thick))
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: verticalSizeClass == .compact ? .leading : .center)
+                    } else if mode == .room && fairMode && equipmentPlacement == nil && !choosingAssemblyPorts {
+                        FairModePanel(
+                            journey: packetJourney, reached: packetHop, challenge: fairChallenge, outcome: fairOutcome,
+                            scores: fairScores, message: fairMessage,
+                            onSendPacket: sendFairPacket, onStartChallenge: startFairChallenge,
+                            onGiveUp: { finishFairChallenge(timedOut: true) },
+                            onTimeout: {
+                                if let fairChallenge, fairChallenge.remaining(at: .now) <= 0.1 { finishFairChallenge(timedOut: true) }
+                            },
+                            onSaveScore: saveFairScore,
+                            onDismissOutcome: { fairOutcome = nil },
+                            onClose: closeFairMode)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: verticalSizeClass == .compact ? .leading : .center)
                     } else if mode == .room && !fullScreen3D && equipmentPlacement == nil && !choosingAssemblyPorts {
                         HStack {
                             Button { assemblySheet = .equipment } label: {
@@ -3502,6 +3635,12 @@ private struct LaboratoryScreen: View {
                                 Label("Recorrido 3D", systemImage: "figure.walk")
                                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                             }.buttonStyle(ViewerPressStyle()).modifier(ViewerSurface(radius: 24))
+                            if topology?.links.isEmpty == false {
+                                Button(action: openFairMode) {
+                                    Label("Modo feria", systemImage: "sparkles")
+                                        .labelStyle(.iconOnly).frame(width: 44, height: 44)
+                                }.buttonStyle(ViewerPressStyle()).modifier(ViewerSurface(radius: 24))
+                            }
                             if !layout.placements.isEmpty {
                                 Button { choose3DPlacement = true } label: {
                                     Label("Organizar en 3D", systemImage: "move.3d")

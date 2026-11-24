@@ -9,5 +9,9 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Nexus AR usa la red local y Bluetooth para conectar dos iPhones en una sesión de trabajo AR en tiempo real.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nexus usa el micrófono para escuchar tus preguntas sobre el laboratorio.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Nexus convierte tu voz en texto, en el iPhone cuando es posible, para responder preguntas sobre el laboratorio.</string>
 </dict>
 </plist>

@@ -45,6 +45,8 @@ private struct LaboratoryScreen: View {
     @State private var fairOutcome: LabFairOutcome?
     @State private var fairMessage: String?
     @State private var fairScores: [LabFairScore] = []
+    @State private var assistant = LabAssistantModel()
+    @State private var assistantOpen = false
     @State private var inspectionDestination: LabInspectionDestination?
     @State private var inspectionRevision = 0
     @State private var lockedDeviceID: String?
@@ -1139,6 +1141,36 @@ private struct LaboratoryScreen: View {
     private var pendingSignalDevices: Set<String> {
         guard let topology = currentTopology, let layout = currentLayout else { return [] }
         return topology.pendingSignalDevices(in: layout, assembly: activeAssembly)
+    }
+
+    // MARK: Voice assistant
+
+    private func openAssistant() {
+        deviceSelection = nil
+        linkSelection = nil
+        tracedLinkID = nil
+        assistant.prepare(LabAssistantContext(
+            topology: { currentTopology },
+            poweredOff: { effectivePoweredOff },
+            place: { device in currentLayout?.placements.first { $0.id == device.placementID }?.title },
+            showPing: { showPingInScene($0, $1) },
+            locate: { locateInScene(.init(deviceID: $0)) },
+            setPower: { id, on in
+                if on { poweredOff.remove(id) } else { poweredOff.insert(id) }
+            },
+            sendPacket: { sendFairPacket() },
+            startChallenge: {
+                assistant.close()
+                assistantOpen = false
+                if !fairMode { openFairMode() }
+                startFairChallenge()
+            }))
+        assistantOpen = true
+    }
+
+    private func closeAssistant() {
+        assistant.close()
+        assistantOpen = false
     }
 
     // MARK: Fair mode
@@ -3481,8 +3513,14 @@ private struct LaboratoryScreen: View {
                     selection = nil
                     answerFairChallenge(placementID: placement.id)
                 }
-                .onChange(of: mode) { if fairMode { closeFairMode() } }
-                .onChange(of: layout3DScope) { if fairMode { closeFairMode() } }
+                .onChange(of: mode) {
+                    if fairMode { closeFairMode() }
+                    if assistantOpen { closeAssistant() }
+                }
+                .onChange(of: layout3DScope) {
+                    if fairMode { closeFairMode() }
+                    if assistantOpen { closeAssistant() }
+                }
                 .overlay {
                     if mode == .room, let trackingMessage {
                         VStack(alignment: .leading, spacing: 8) {
@@ -3610,6 +3648,10 @@ private struct LaboratoryScreen: View {
                         .modifier(ViewerSurface(radius: 18, material: .thick))
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: verticalSizeClass == .compact ? .leading : .center)
+                    } else if mode == .room && assistantOpen && equipmentPlacement == nil && !choosingAssemblyPorts {
+                        LabAssistantPanel(model: assistant, onClose: { assistantOpen = false })
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: verticalSizeClass == .compact ? .leading : .center)
                     } else if mode == .room && fairMode && equipmentPlacement == nil && !choosingAssemblyPorts {
                         FairModePanel(
                             journey: packetJourney, reached: packetHop, challenge: fairChallenge, outcome: fairOutcome,
@@ -3621,7 +3663,8 @@ private struct LaboratoryScreen: View {
                             },
                             onSaveScore: saveFairScore,
                             onDismissOutcome: { fairOutcome = nil },
-                            onClose: closeFairMode)
+                            onClose: closeFairMode,
+                            onAssistant: openAssistant)
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: verticalSizeClass == .compact ? .leading : .center)
                     } else if mode == .room && !fullScreen3D && equipmentPlacement == nil && !choosingAssemblyPorts {
@@ -3638,6 +3681,12 @@ private struct LaboratoryScreen: View {
                             if topology?.links.isEmpty == false {
                                 Button(action: openFairMode) {
                                     Label("Modo feria", systemImage: "sparkles")
+                                        .labelStyle(.iconOnly).frame(width: 44, height: 44)
+                                }.buttonStyle(ViewerPressStyle()).modifier(ViewerSurface(radius: 24))
+                            }
+                            if topology?.devices.isEmpty == false {
+                                Button(action: openAssistant) {
+                                    Label("Hablar con Nexus", systemImage: "waveform")
                                         .labelStyle(.iconOnly).frame(width: 44, height: 44)
                                 }.buttonStyle(ViewerPressStyle()).modifier(ViewerSurface(radius: 24))
                             }

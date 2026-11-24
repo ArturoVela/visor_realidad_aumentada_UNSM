@@ -95,6 +95,7 @@ struct FairModePanel: View {
     let onSaveScore: (String) -> Void
     let onDismissOutcome: () -> Void
     let onClose: () -> Void
+    var onAssistant: (() -> Void)? = nil
 
     @State private var playerName = ""
     @State private var showsRanking = false
@@ -104,6 +105,11 @@ struct FairModePanel: View {
             HStack {
                 Label("Modo feria", systemImage: "sparkles").font(.headline)
                 Spacer()
+                if let onAssistant {
+                    Button(action: onAssistant) {
+                        Label("Hablar con Nexus", systemImage: "waveform").labelStyle(.iconOnly).frame(width: 36, height: 36)
+                    }
+                }
                 Button { showsRanking.toggle() } label: {
                     Label("Ranking", systemImage: "trophy").labelStyle(.iconOnly).frame(width: 36, height: 36)
                 }

@@ -30,6 +30,10 @@
 		A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* CollaborativeSessionView.swift */; };
 		A00000000000000000000022 /* FairMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000022 /* FairMode.swift */; };
 		A00000000000000000000023 /* FairModePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000023 /* FairModePanel.swift */; };
+		A00000000000000000000024 /* LabAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000024 /* LabAssistant.swift */; };
+		A00000000000000000000025 /* LabAssistantModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000025 /* LabAssistantModel.swift */; };
+		A00000000000000000000026 /* LabAssistantIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000026 /* LabAssistantIntelligence.swift */; };
+		A00000000000000000000027 /* LabAssistantPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000027 /* LabAssistantPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +61,10 @@
 		B00000000000000000000021 /* CollaborativeSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollaborativeSessionView.swift; sourceTree = "<group>"; };
 		B00000000000000000000022 /* FairMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairMode.swift; sourceTree = "<group>"; };
 		B00000000000000000000023 /* FairModePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairModePanel.swift; sourceTree = "<group>"; };
+		B00000000000000000000024 /* LabAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabAssistant.swift; sourceTree = "<group>"; };
+		B00000000000000000000025 /* LabAssistantModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabAssistantModel.swift; sourceTree = "<group>"; };
+		B00000000000000000000026 /* LabAssistantIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabAssistantIntelligence.swift; sourceTree = "<group>"; };
+		B00000000000000000000027 /* LabAssistantPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabAssistantPanel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +112,10 @@
 				B00000000000000000000021 /* CollaborativeSessionView.swift */,
 				B00000000000000000000022 /* FairMode.swift */,
 				B00000000000000000000023 /* FairModePanel.swift */,
+				B00000000000000000000024 /* LabAssistant.swift */,
+				B00000000000000000000025 /* LabAssistantModel.swift */,
+				B00000000000000000000026 /* LabAssistantIntelligence.swift */,
+				B00000000000000000000027 /* LabAssistantPanel.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -208,6 +220,10 @@
 				A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */,
 				A00000000000000000000022 /* FairMode.swift in Sources */,
 				A00000000000000000000023 /* FairModePanel.swift in Sources */,
+				A00000000000000000000024 /* LabAssistant.swift in Sources */,
+				A00000000000000000000025 /* LabAssistantModel.swift in Sources */,
+				A00000000000000000000026 /* LabAssistantIntelligence.swift in Sources */,
+				A00000000000000000000027 /* LabAssistantPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -260,6 +276,8 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara para leer etiquetas QR del laboratorio y, con LiDAR, medir el espacio y colocar el modelo virtual.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nexus usa el micrófono para escuchar tus preguntas sobre el laboratorio.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Nexus convierte tu voz en texto, en el iPhone cuando es posible, para responder preguntas sobre el laboratorio.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Nexus AR usa la red local y Bluetooth para conectar dos iPhones en una sesión de trabajo AR en tiempo real.";
 				INFOPLIST_KEY_NSBonjourServices = (
@@ -297,6 +315,8 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara para leer etiquetas QR del laboratorio y, con LiDAR, medir el espacio y colocar el modelo virtual.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nexus usa el micrófono para escuchar tus preguntas sobre el laboratorio.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Nexus convierte tu voz en texto, en el iPhone cuando es posible, para responder preguntas sobre el laboratorio.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Nexus AR usa la red local y Bluetooth para conectar dos iPhones en una sesión de trabajo AR en tiempo real.";
 				INFOPLIST_KEY_NSBonjourServices = (

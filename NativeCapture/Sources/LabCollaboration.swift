@@ -102,7 +102,7 @@ final class NexusPeerSession: NSObject, @unchecked Sendable {
 
         advertiser = MCNearbyServiceAdvertiser(
             peer: myPeerID,
-            discoveryInfo: ["version": "1.0", "host": myPeerID.displayName],
+            discoveryInfo: nil,
             serviceType: Self.serviceType
         )
         advertiser?.delegate = self

@@ -150,9 +150,25 @@ final class LabAssistantExecutor {
 
 // MARK: - Speech capture
 
+nonisolated enum LabSpeechEvent: Sendable {
+    case partial(String)
+    case final(String)
+    case failed(domain: String, code: Int, message: String)
+}
+
 /// Microphone and speech recognizer. Audio callbacks run off the main thread, so this type is nonisolated.
 nonisolated final class LabSpeechCapture: @unchecked Sendable {
-    enum CaptureError: Error { case unavailable, noInput }
+    enum CaptureError: LocalizedError {
+        case noRecognizer, unavailable, noInput
+
+        var errorDescription: String? {
+            switch self {
+            case .noRecognizer: "Este iPhone no tiene reconocimiento de voz en español."
+            case .unavailable: "El reconocimiento de voz no está disponible ahora. Revisa la conexión a internet o activa Dictado en Ajustes › General › Teclado."
+            case .noInput: "No encontré un micrófono disponible."
+            }
+        }
+    }
 
     private let engine = AVAudioEngine()
     private let recognizer: SFSpeechRecognizer?
@@ -161,9 +177,15 @@ nonisolated final class LabSpeechCapture: @unchecked Sendable {
     private let lock = NSLock()
 
     init() {
-        let preferred = [Locale.current.identifier, "es-MX", "es-US", "es-ES", "es-CO", "es-CL"].filter { $0.hasPrefix("es") }
-        recognizer = preferred.lazy.compactMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) }.first
+        let preferred = [Locale.current.identifier, "es-MX", "es-US", "es-ES", "es-CO", "es-CL", "es-419"]
+            .filter { $0.lowercased().hasPrefix("es") }
+        let recognizers = preferred.compactMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) }
+        // Prefer a recognizer that can work right now; otherwise keep the first Spanish one.
+        recognizer = recognizers.first { $0.isAvailable } ?? recognizers.first
     }
+
+    var localeIdentifier: String { recognizer?.locale.identifier ?? "sin idioma" }
+    var supportsOnDevice: Bool { recognizer?.supportsOnDeviceRecognition == true }
 
     static func authorize() async -> Bool {
         let status = await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
@@ -173,10 +195,11 @@ nonisolated final class LabSpeechCapture: @unchecked Sendable {
         return await AVAudioApplication.requestRecordPermission()
     }
 
-    /// Starts listening. `update` receives the transcript so far and whether it is final.
-    func start(update: @escaping @Sendable (String, Bool) -> Void) throws {
+    /// Starts listening. On-device recognition is optional: it fails when the Spanish model is not downloaded.
+    func start(onDevice: Bool, events: @escaping @Sendable (LabSpeechEvent) -> Void) throws {
         cancel()
-        guard let recognizer, recognizer.isAvailable else { throw CaptureError.unavailable }
+        guard let recognizer else { throw CaptureError.noRecognizer }
+        guard recognizer.isAvailable else { throw CaptureError.unavailable }
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -184,7 +207,7 @@ nonisolated final class LabSpeechCapture: @unchecked Sendable {
         nonisolated(unsafe) let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.taskHint = .search
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        request.requiresOnDeviceRecognition = onDevice && recognizer.supportsOnDeviceRecognition
 
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -192,13 +215,20 @@ nonisolated final class LabSpeechCapture: @unchecked Sendable {
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
 
         let task = recognizer.recognitionTask(with: request) { result, error in
             if let result {
-                update(result.bestTranscription.formattedString, result.isFinal)
-            } else if error != nil {
-                update("", true)
+                let text = result.bestTranscription.formattedString
+                events(result.isFinal ? .final(text) : .partial(text))
+            } else if let error {
+                let error = error as NSError
+                events(.failed(domain: error.domain, code: error.code, message: error.localizedDescription))
             }
         }
         lock.withLock {
@@ -227,10 +257,8 @@ nonisolated final class LabSpeechCapture: @unchecked Sendable {
     }
 
     private func stopEngine() {
-        if engine.isRunning {
-            engine.stop()
-            engine.inputNode.removeTap(onBus: 0)
-        }
+        if engine.isRunning { engine.stop() }
+        engine.inputNode.removeTap(onBus: 0)
     }
 }
 
@@ -263,6 +291,7 @@ final class LabAssistantModel {
     @ObservationIgnored private var silenceTask: Task<Void, Never>?
     @ObservationIgnored private var speakingTask: Task<Void, Never>?
     @ObservationIgnored private var responder: (any LabAssistantResponder)?
+    @ObservationIgnored private var listeningOnDevice = false
 
     var intelligenceAvailable: Bool { responder != nil }
     var usesIntelligence: Bool { intelligenceAvailable && prefersIntelligence }
@@ -320,27 +349,76 @@ final class LabAssistantModel {
     private func startListening() async {
         notice = nil
         guard await LabSpeechCapture.authorize() else {
-            notice = "Activa el micrófono y el reconocimiento de voz para Nexus AR en Ajustes. También puedes escribir tu pregunta."
+            notice = "Nexus no tiene permiso para el micrófono o el reconocimiento de voz. Actívalos en Ajustes › Nexus AR. También puedes escribir tu pregunta."
             return
         }
         synthesizer.stopSpeaking(at: .immediate)
         transcript = ""
+        listen(onDevice: capture.supportsOnDevice)
+    }
+
+    private func listen(onDevice: Bool) {
+        listeningOnDevice = onDevice
         do {
-            try capture.start { [weak self] text, isFinal in
-                Task { @MainActor in self?.heard(text, isFinal: isFinal) }
+            try capture.start(onDevice: onDevice) { [weak self] event in
+                Task { @MainActor in self?.heard(event) }
             }
             phase = .listening
             waitForSilence(seconds: 7)
         } catch {
-            notice = "No pude usar el micrófono aquí. Escribe tu pregunta."
             phase = .idle
+            notice = error.localizedDescription + Self.simulatorHint
         }
     }
 
-    private func heard(_ text: String, isFinal: Bool) {
+    private func heard(_ event: LabSpeechEvent) {
         guard phase == .listening else { return }
-        if !text.isEmpty { transcript = text }
-        if isFinal { finishListening() } else { waitForSilence(seconds: 1.6) }
+        switch event {
+        case .partial(let text):
+            if !text.isEmpty { transcript = text }
+            waitForSilence(seconds: 1.6)
+        case .final(let text):
+            if !text.isEmpty { transcript = text }
+            finishListening()
+        case .failed(let domain, let code, let message):
+            if !transcript.isEmpty {
+                finishListening()
+            } else if listeningOnDevice {
+                // The Spanish on-device model may be missing: try Apple's server recognition once.
+                capture.cancel()
+                listen(onDevice: false)
+            } else {
+                silenceTask?.cancel()
+                capture.cancel()
+                phase = .idle
+                notice = Self.explain(domain: domain, code: code, message: message, locale: capture.localeIdentifier)
+            }
+        }
+    }
+
+    private static var simulatorHint: String {
+        #if targetEnvironment(simulator)
+        return " En el simulador el micrófono y el dictado suelen fallar: pruébalo en un iPhone."
+        #else
+        return ""
+        #endif
+    }
+
+    /// Turns recognizer errors into a sentence the presenter can act on, keeping the code for support.
+    private static func explain(domain: String, code: Int, message: String, locale: String) -> String {
+        let reference = " (\(domain) \(code), \(locale))"
+        switch (domain, code) {
+        case ("kAFAssistantErrorDomain", 1110), ("kAFAssistantErrorDomain", 1107):
+            return "No te escuché. Habla cerca del iPhone justo después de tocar el micrófono."
+        case ("kLSRErrorDomain", 201), ("kAFAssistantErrorDomain", 1700):
+            return "Activa Dictado en Ajustes › General › Teclado › Activar dictado y vuelve a intentarlo." + reference
+        case ("kAFAssistantErrorDomain", 1101), ("kLSRErrorDomain", 102):
+            return "Falta descargar el idioma español para el dictado. Conéctate a internet o descárgalo en Ajustes › General › Teclado." + reference
+        case ("kAFAssistantErrorDomain", 203), ("kAFAssistantErrorDomain", 1100):
+            return "El servicio de voz de Apple no respondió. Revisa la conexión a internet y vuelve a intentarlo." + reference
+        default:
+            return "No pude reconocer la voz: \(message)" + reference + simulatorHint
+        }
     }
 
     /// Ends the turn after a pause, so the visitor does not need to press the button again.

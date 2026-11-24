@@ -50,6 +50,8 @@ private struct LaboratoryScreen: View {
     @AppStorage("openedSiteLaboratory") private var openedSiteLaboratory = ""
     @State private var macReceipt: LabImport.Entry?
     @State private var showOptions = false
+    @State private var peerSession = NexusPeerSession()
+    @State private var showCollaborationSheet = false
     @State private var showPingDiagnostics = false
     @State private var showLabCatalog = false
     @State private var afterCatalogDismissal: (() -> Void)?
@@ -232,6 +234,19 @@ private struct LaboratoryScreen: View {
             .toolbar(fullScreen3D ? .hidden : .visible, for: .navigationBar)
             .statusBarHidden(fullScreen3D)
             .toolbar {
+                if !capture.isBusy {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showCollaborationSheet = true
+                        } label: {
+                            Label(
+                                "Sesión colaborativa",
+                                systemImage: peerSession.status.isConnected ? "person.2.wave.2.fill" : "person.2.wave.2"
+                            )
+                        }
+                        .tint(peerSession.status.isConnected ? .green : .accentColor)
+                    }
+                }
                 if !capture.isBusy && canSearchViewer {
                     ToolbarItem(placement: .topBarTrailing) { viewerSearchButton }
                 }
@@ -295,6 +310,7 @@ private struct LaboratoryScreen: View {
             }
         }
         .task {
+            setupCollaborationHandlers()
             let previous = UserDefaults.standard.string(forKey: "activeLaboratory")
             await capture.selectSite(operations.siteStorageID)
             switch previous {
@@ -584,6 +600,13 @@ private struct LaboratoryScreen: View {
         .sheet(isPresented: $showOptions, onDismiss: runOptionsAction) {
             NavigationStack { optionsList }
         }
+        .sheet(isPresented: $showCollaborationSheet) {
+            CollaborativeSessionView(session: peerSession) {
+                if let topology = currentTopology {
+                    peerSession.sendReliable(.syncTopology(topology, scale: arScale.factor))
+                }
+            }
+        }
         .sheet(isPresented: $showPingDiagnostics) {
             if let topology = currentTopology {
                 NavigationStack { pingDiagnostics(topology).toolbar { DismissButton() } }
@@ -699,6 +722,16 @@ private struct LaboratoryScreen: View {
 
     private var optionsList: some View {
         List {
+            Section("Sesión Colaborativa Multi-iPhone") {
+                Button {
+                    finishOptions { showCollaborationSheet = true }
+                } label: {
+                    Label(
+                        peerSession.status.isConnected ? "Sesión colaborativa activa (\(peerSession.connectedPeerName ?? ""))" : "Conectar 2 iPhones (Sesión AR)",
+                        systemImage: "person.2.wave.2"
+                    )
+                }
+            }
             laboratoryOptions
             if workspaceProject != nil {
                 Button("Editar laboratorio", systemImage: "plus.rectangle.on.rectangle") {
@@ -1877,7 +1910,6 @@ private struct LaboratoryScreen: View {
             nextAssemblySheet = nil
             assemblySheet = next
         } else {
-            if choosingAssemblyPorts && previewProject?.editableID == nil { clearAssemblyPorts() }
             openPendingAssembly()
         }
     }
@@ -1991,7 +2023,7 @@ private struct LaboratoryScreen: View {
     }
 
     private var assemblyPortPickingAvailable: Bool {
-        (mode == .room ? choosingAssemblyPorts : activeAssembly != nil && walkthrough.ready) &&
+        (mode == .room ? (choosingAssemblyPorts || assemblyPortRoute != nil) : (walkthrough.ready && currentTopology != nil)) &&
             equipmentPlacement == nil && preview3DPlacement == nil && assemblyPlacement == nil && assemblyEdit == nil && waypointEdit == nil &&
             assemblyRackID == nil && assemblyCableRequest == nil && assemblyPortDestination == nil && assemblySheet == nil
     }
@@ -2001,7 +2033,6 @@ private struct LaboratoryScreen: View {
         tracedLinkID = nil
         assemblyCableConfirmation = nil
         walkthrough.placementHint = nil
-        if mode == .ar && previewProject?.editableID == nil { assemblySheet = .network }
     }
 
     private func openAssemblyPortPicker(device: String? = nil, afterDismissal: Bool = false) {
@@ -2029,7 +2060,6 @@ private struct LaboratoryScreen: View {
             startAssemblyConnection()
             assemblyPortRoute = .init(origin: port, vlan: topology.suggestedVLAN(at: port) ?? -2)
             UISelectionFeedbackGenerator().selectionChanged()
-            if mode == .ar && previewProject?.editableID == nil { return }
         } else {
             walkthrough.placementHint = nil
             assemblyPortDestination = port
@@ -2038,7 +2068,7 @@ private struct LaboratoryScreen: View {
     }
 
     private func connectAssemblyCable(to destination: LabTopology.Port) async {
-        guard mode == .room || (activeAssembly != nil && previewProject?.editableID != nil), let route = assemblyPortRoute else {
+        guard let route = assemblyPortRoute else {
             assemblyPortDestination = nil
             return
         }
@@ -3012,6 +3042,33 @@ private struct LaboratoryScreen: View {
         try build()
     }
 
+    private func setupCollaborationHandlers() {
+        peerSession.onMessageReceived = { message in
+            switch message {
+            case .requestInitialState:
+                if peerSession.isHost, let topology = currentTopology {
+                    peerSession.sendReliable(.syncTopology(topology, scale: arScale.factor))
+                }
+            case .syncTopology(let topology, _):
+                if !peerSession.isHost {
+                    self.roomTopology = topology
+                    self.showCables = true
+                    if mode != .ar && canUseAR {
+                        openPreviewAR(reposition: false)
+                    }
+                }
+            case .setDevicePower(let deviceID, let isOn):
+                if isOn {
+                    poweredOff.remove(deviceID)
+                } else {
+                    poweredOff.insert(deviceID)
+                }
+            default:
+                break
+            }
+        }
+    }
+
     private func showPreview(_ project: LabProject, key: String) {
         pingSelection = nil
         activeSavedLab = nil
@@ -3100,6 +3157,7 @@ private struct LaboratoryScreen: View {
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
         if capture.supportsMesh { configuration.sceneReconstruction = .mesh }
+        configuration.isCollaborationEnabled = true
         if isTierPreview { configureTierCamera(configuration) }
         if let anchorName, previewMapExists, !reposition {
             do {
@@ -3283,7 +3341,7 @@ private struct LaboratoryScreen: View {
                 assemblyEditID: waypointEdit?.id ?? assemblyEdit?.id,
                 assemblyRackID: assemblyRackID,
                 assemblyWaypointsEditable: cableWaypointDragEnabled,
-                assemblyPortsEnabled: assemblyPortPickingAvailable && choosingAssemblyPorts,
+                assemblyPortsEnabled: assemblyPortPickingAvailable,
                 assemblyPortSource: assemblyPortRoute?.origin,
                 assemblyPortDestination: assemblyPortDestination,
                 selectableScenePorts: choosingAssemblyPorts ? sceneConnectionPorts : nil,
@@ -3301,7 +3359,8 @@ private struct LaboratoryScreen: View {
                 onAssemblyWaypoint: handleWaypointGesture,
                 onAssemblyPort: handleAssemblyPort,
                 onPowerOutlet: hitPowerOutlet,
-                onEquipmentTarget: chooseEquipmentTarget)
+                onEquipmentTarget: chooseEquipmentTarget,
+                peerSession: peerSession)
                 .id(identity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
                 .ignoresSafeArea(.container, edges: fullScreen3D ? .all : [])
@@ -3317,6 +3376,54 @@ private struct LaboratoryScreen: View {
                         }
                         .padding(12).modifier(ViewerSurface(radius: 14)).padding(12)
                     }
+                }
+                .overlay(alignment: .top) {
+                    VStack(spacing: 6) {
+                        if peerSession.status.isConnected {
+                            HStack(spacing: 8) {
+                                Circle().fill(.green).frame(width: 8, height: 8)
+                                Text(peerSession.isHost ? "Anfitrión • Conectado a \(peerSession.connectedPeerName ?? "")" : "Invitado • Conectado a \(peerSession.connectedPeerName ?? "")")
+                                    .font(.caption2.weight(.semibold))
+                                if peerSession.isPresentationOnly && !peerSession.isHost {
+                                    Text("(Solo lectura)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .modifier(ViewerSurface(radius: 12))
+                            .onTapGesture { showCollaborationSheet = true }
+                        }
+                        if let alert = peerSession.lastActionAlert {
+                            HStack(spacing: 6) {
+                                Image(systemName: "hand.tap.fill")
+                                    .foregroundStyle(.orange)
+                                Text(alert)
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .modifier(ViewerSurface(radius: 14))
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .task(id: alert) {
+                                try? await Task.sleep(for: .seconds(3.5))
+                                if peerSession.lastActionAlert == alert {
+                                    peerSession.lastActionAlert = nil
+                                }
+                            }
+                        }
+                        if let assemblyCableConfirmation, mode == .ar {
+                            ViewThatFits(in: .horizontal) {
+                                Label(assemblyCableConfirmation, systemImage: "checkmark.circle.fill")
+                                    .fixedSize(horizontal: true, vertical: false)
+                                Label("Cable conectado", systemImage: "checkmark.circle.fill")
+                            }
+                            .accessibilityLabel(assemblyCableConfirmation)
+                            .font(.caption.weight(.semibold)).padding(8).modifier(ViewerSurface(radius: 12))
+                        }
+                    }
+                    .padding(8)
                 }
                 .overlay(alignment: .top) {
                     if mode == .room {
@@ -3417,7 +3524,7 @@ private struct LaboratoryScreen: View {
                         EquipmentPlacementControls(name: equipmentPlacement.device.name, surface: equipmentPlacement.surface,
                             ready: mode == .room || walkthrough.ready, selected: equipmentPlacement.choice != nil,
                             hint: equipmentPlacement.hint, confirm: confirmEquipmentPlacement, cancel: { self.equipmentPlacement = nil })
-                    } else if mode == .room, let ports = assemblyPortControls() {
+                    } else if let ports = assemblyPortControls() {
                         ports.padding(12).modifier(ViewerSurface(radius: 18, material: .thick)).padding(12)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     } else if mode == .ar, let rack = powerOutletRack {

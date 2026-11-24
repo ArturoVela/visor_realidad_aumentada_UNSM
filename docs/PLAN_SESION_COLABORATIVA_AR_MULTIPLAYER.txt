@@ -1,0 +1,279 @@
+================================================================================
+CISCO NEXUS AR — PLAN DE IMPLEMENTACIÓN TÉCNICA
+SESIÓN DE TRABAJO COLABORATIVA AR EN TIEMPO REAL (MULTI-IPHONE)
+================================================================================
+Fecha de emisión: 23 de Noviembre de 2026
+Proyecto: Visor Realidad Aumentada UNSM (CISCO NEXUS AR)
+Plataforma: iOS (SwiftUI + ARKit + RealityKit + MultipeerConnectivity)
+Documento de referencia: docs/PLAN_SESION_COLABORATIVA_AR_MULTIPLAYER.txt
+================================================================================
+
+1. RESUMEN EJECUTIVO Y VIABILIDAD TÉCNICA
+--------------------------------------------------------------------------------
+¿Se puede hacer? 
+SÍ, AL 100%. Apple diseñó nativamente el ecosistema iOS para este caso de uso
+específico mediante dos pilares tecnológicos integrados en el hardware y software
+del iPhone:
+  1. ARKit Collaborative Sessions (isCollaborationEnabled = true): permite que
+     dos o más iPhones en el mismo espacio físico intercambien datos de
+     geometría, nubes de puntos y anclas visuales para compartir exactamente el
+     mismo origen de coordenadas (0, 0, 0).
+  2. MultipeerConnectivity Framework: protocolo de red punto a punto (P2P) de
+     Apple que opera a través de Wi-Fi local y Bluetooth de baja latencia sin
+     necesidad de conexión a Internet, servidores en la nube ni costos de infraestructura.
+
+Objetivo funcional:
+Permitir que dos iPhones ejecuten Nexus AR en paralelo, compartan la misma sala o
+maqueta de laboratorio 3D en tiempo real, vean la presencia física y visual del
+otro participante, y ambos puedan "meter mano" (manipular racks, tirar cables de
+cobre/fibra, inspeccionar puertos y modificar configuraciones de red simultáneamente)
+con sincronización instantánea y resolución de conflictos.
+
+
+2. ARQUITECTURA GENERAL DEL SISTEMA
+--------------------------------------------------------------------------------
+La arquitectura colaborativa se divide en 4 capas desacopladas:
+
+  +-------------------------------------------------------------------------+
+  | CAPA 4: INTERFAZ Y EXPERIENCIA (SwiftUI + Apple Design)                  |
+  | - Panel de sesión colaborativa (Anfitrión / Unirse)                     |
+  | - HUD de presencia (nombre de compañeros, calidad de sincronización)    |
+  | - Bloqueo visual transitorio (feedback al tocar un equipo)              |
+  +-------------------------------------------------------------------------+
+                                     |
+  +-------------------------------------------------------------------------+
+  | CAPA 3: SINCRONIZACIÓN DE ESTADO Y ACCIONES (LabSyncProtocol)           |
+  | - Acciones del laboratorio: mover rack, tender cable, editar IP/VLAN    |
+  | - Control de concurrencia: bloqueo por toque + autoridad del anfitrión  |
+  | - Transmisión de cambios en formato binario compacto (Codable)          |
+  +-------------------------------------------------------------------------+
+                                     |
+  +-------------------------------------------------------------------------+
+  | CAPA 2: ALINEACIÓN ESPACIAL COMPARTIDA (ARKit Collaborative Sessions)   |
+  | - Intercambio continuo de ARCollaborationData                           |
+  | - Anclas de participantes (ARParticipantAnchor) para ubicar al colega   |
+  | - Relocalización sobre origen común (RoomPlan 1:1 o Maqueta 1:10)       |
+  +-------------------------------------------------------------------------+
+                                     |
+  +-------------------------------------------------------------------------+
+  | CAPA 1: RED LOCAL PEER-TO-PEER (MultipeerConnectivity)                  |
+  | - Descubrimiento automático Bonjour en red local o Bluetooth            |
+  | - Transmisión segura y sin servidor externo                             |
+  | - Conexión de baja latencia (<25 ms en Wi-Fi local)                     |
+  +-------------------------------------------------------------------------+
+
+
+3. LÓGICA DE FUNCIONAMIENTO DETALLADA (PASO A PASO)
+--------------------------------------------------------------------------------
+
+FASE A: DESCUBRIMIENTO Y CONEXIÓN ENTRE TELÉFONOS
+  1. El iPhone A ("Anfitrión / Host") tiene un laboratorio abierto (sala escaneada
+     1:1 o maqueta 1:10) y presiona "Compartir sesión de trabajo".
+  2. El iPhone A activa MCNearbyServiceAdvertiser publicando el servicio
+     "nexus-ar-collab".
+  3. El iPhone B ("Colaborador") abre Nexus AR y en el menú de sesión selecciona
+     "Unirse a sesión cercana".
+  4. Su MCNearbyServiceBrowser encuentra el iPhone A inmediatamente. El usuario
+     toca el nombre del anfitrión y se establece un canal encriptado de MCSession.
+  5. El iPhone A envía un snapshot completo del laboratorio activo (Topología JSON,
+     posiciones de racks, cables existentes y estado de equipos).
+  6. El iPhone B recibe y reconstruye la escena en su RealityKit local.
+
+FASE B: ALINEACIÓN ESPACIAL EN EL MUNDO REAL (RELOCALIZACIÓN AR)
+  El gran reto de la Realidad Aumentada multiusuario es que ambos teléfonos
+  tengan el punto (0,0,0) exactamente en el mismo sitio físico del cuarto.
+  ¿Cómo se logra?
+  
+  Método 1: ARKit Collaborative Tracking (Recomendado y nativo)
+    - Ambos dispositivos activan ARWorldTrackingConfiguration con:
+        configuration.isCollaborationEnabled = true
+        configuration.environmentTexturing = .automatic
+    - En el delegado `session(_:didOutputCollaborationData:)`, cada vez que ARKit
+      genera un paquete de características del entorno, se envía por el canal
+      Multipeer al otro iPhone.
+    - El iPhone B procesa los datos con `session.update(with: collaborationData)`.
+    - Tan pronto el iPhone B apunta hacia una zona que el iPhone A ya observó,
+      el sistema ARKit relocaliza su sistema de coordenadas e iguala su origen
+      al del iPhone A de forma completamente invisible.
+  
+  Método 2: Ancla de Referencia / Código QR (Fallback instantáneo de cero espera)
+    - Se coloca una tarjeta física o código QR impreso en una mesa o pared.
+    - Ambos iPhones escanean el marcador una sola vez.
+    - El origen de la escena de RealityKit se ancla al código físico.
+    - Es instantáneo y no requiere esperar convergencia de nubes de puntos.
+
+FASE C: PRESENCIA Y VISIBILIDAD MUTUA EN 3D
+  1. ARKit detecta al otro iPhone en la sala y emite automáticamente un
+     `ARParticipantAnchor`.
+  2. RealityKit añade una entidad visual sobre esa posición:
+     - Una pequeña etiqueta flotante con el nombre del compañero (ej. "iPhone de Carlos").
+     - Un cono o haz sutil de luz (puntero láser AR) que muestra exactamente a qué
+       rack, cable o puerto está mirando o apuntando con su cámara.
+
+FASE D: "METER MANO" Y EDICIÓN COLABORATIVA CONCURRENTE
+  ¿Qué pasa cuando ambos interactúan a la vez?
+  Se define un protocolo de concurrencia optimista con bloqueo suave (Soft Locking):
+  
+  1. Selección y Manipulación de un Equipo / Rack:
+     - Cuando el Usuario A pone el dedo sobre un switch o rack en pantalla para moverlo
+       o configurarlo, su iPhone emite un mensaje:
+         `ActionMessage.lock(entityID: "rack-01", by: "UserA")`
+     - En la pantalla del Usuario B, ese rack se ilumina con un halo sutil azul claro
+       y muestra el nombre "Carlos editando".
+     - El Usuario B no puede desplazar ese mismo rack mientras el Usuario A lo sostenga,
+       evitando saltos bruscos o colisiones de coordenadas.
+     - Mientras el Usuario A arrastra el rack, se envían actualizaciones de posición
+       a 30/60 Hz (`ActionMessage.move(entityID, transform)`), por lo que el Usuario B
+       ve el rack desplazarse fluidamente en tiempo real.
+     - Al soltar, se emite `ActionMessage.unlock(entityID: "rack-01")`.
+
+  2. Conexión de Cables en Vivo:
+     - El Usuario A toca el puerto GigabitEthernet0/1 en el Switch 2960.
+     - El Usuario B ve cómo ese puerto parpadea en color ámbar ("Iniciando cable").
+     - El Usuario A o el Usuario B tocan el puerto de destino en el Router 4331.
+     - El cable de cobre azul o fibra naranja se genera en tiempo real en ambas pantallas
+       simultáneamente, con la curva parabólica y física ya calculada en LabScene.swift.
+
+  3. Configuración Lógica (IPs, VLANs, Hostnames):
+     - Cuando uno de los dos edita una IP o asigna una VLAN en el inspector, el cambio
+       se serializa y replica al otro teléfono en menos de 100 ms.
+     - El anfitrión (Host) almacena la copia canónica de la topología para guardar los
+       cambios al finalizar la sesión.
+
+
+4. PROTOCOLO DE MENSAJES Y CONTRATO DE DATOS (LabSyncProtocol)
+--------------------------------------------------------------------------------
+Los mensajes se codifican mediante `PropertyListEncoder` o `JSONEncoder` en buffers
+binarios ultraligeros de menos de 1 KB por paquete:
+
+```swift
+enum SyncMessage: Codable {
+    // 1. Fase de Handshake y Estado Inicial
+    case hello(deviceName: String, appVersion: String)
+    case initialTopology(LabTopology, roomTransform: simd_float4x4?)
+    
+    // 2. Colaboración ARKit
+    case arCollaborationData(Data)
+    
+    // 3. Control de Concurrencia (Bloqueo y Puntero)
+    case acquireLock(targetID: String, clientID: String)
+    case releaseLock(targetID: String, clientID: String)
+    case userPointer(clientID: String, rayOrigin: SIMD3<Float>, rayDirection: SIMD3<Float>)
+    
+    // 4. Mutaciones del Laboratorio en Tiempo Real
+    case movePlacement(placementID: String, translation: SIMD3<Float>, yaw: Float)
+    case createCable(sourceID: String, sourcePort: String, targetID: String, targetPort: String, media: String)
+    case deleteCable(cableID: String)
+    case updateDeviceProperty(deviceID: String, key: String, value: String)
+    case setDevicePower(deviceID: String, isOn: Bool)
+}
+```
+
+
+5. INTEGRACIÓN EN EL CÓDIGO EXISTENTE DE NEXUS AR
+--------------------------------------------------------------------------------
+El proyecto ya cuenta con una arquitectura muy sólida y modular en Swift. La
+integración requerirá únicamente 3 archivos nuevos y modificaciones menores en 2:
+
+ARCHIVOS NUEVOS A CREAR:
+  1. `NativeCapture/Sources/NexusPeerSession.swift`:
+     - Encapsula `MCSession`, `MCNearbyServiceAdvertiser` y `MCNearbyServiceBrowser`.
+     - Maneja el ciclo de vida de conexión (connecting, connected, disconnected).
+     - Expone publicadores de Combine / `@Observable` para SwiftUI.
+
+  2. `NativeCapture/Sources/LabCollaborationManager.swift`:
+     - Puente entre `ARSession` y `NexusPeerSession`.
+     - Recibe los `ARCollaborationData` y los reenvía a los compañeros conectados.
+     - Despacha las acciones de `SyncMessage` hacia `LabScene` y `LabTopology`.
+
+  3. `NativeCapture/Sources/CollaborativeSessionView.swift`:
+     - Modal o barra de estado SwiftUI según las pautas de Apple Design.
+     - Permite activar "Crear sesión" o "Buscar compañeros cercanos".
+     - Muestra estado de sincronización (Buscando -> Vinculando espacio -> En sincronía).
+
+MODIFICACIONES EN ARCHIVOS EXISTENTES:
+  1. `NativeCapture/Sources/CaptureController.swift`:
+     - Habilitar `configuration.isCollaborationEnabled = true` en la configuración
+       de ARWorldTracking cuando el modo colaborativo esté activo.
+  2. `NativeCapture/Sources/LabScene.swift`:
+     - En `Coordinator`, implementar `session(_:didOutputCollaborationData:)` y
+       `session(_:didAdd:)` para reconocer `ARParticipantAnchor`.
+     - Escuchar los eventos de `LabCollaborationManager` para mover los `ModelEntity`
+       correspondientes en RealityKit cuando el otro usuario los manipule.
+
+
+6. DIRECTRICES DE DISEÑO Y EXPERIENCIA DE USUARIO (APPLE DESIGN)
+--------------------------------------------------------------------------------
+En estricto cumplimiento con la guía de estilo del repositorio (`apple-design/SKILL.md`
+y `AGENTS.md`):
+
+  - Latencia imperceptible: Las acciones locales responden inmediatamente en pantalla
+    (Optimistic UI) sin esperar la confirmación de red, y se sincronizan al par en
+    segundo plano.
+  - Indicadores visuales sutiles: La presencia del compañero no satura la cámara. Se
+    utilizan halos semitransparentes, colores semánticos de iOS y el azul Nexus AR.
+  - Tipografía del sistema (San Francisco): Etiquetas claras para identificar quién
+    está operando cada equipo.
+  - Respeto a accesibilidad: Compatible con Reducir movimiento (eliminando pulsos
+    visuales innecesarios) y Alto contraste.
+
+
+7. PLAN DE TRABAJO Y CRONOGRAMA POR ETAPAS
+--------------------------------------------------------------------------------
+
+ETAPA 1: COMUNICACIÓN PEER-TO-PEER (Días 1-2)
+  - Implementar `NexusPeerSession.swift` con MultipeerConnectivity.
+  - Pruebas de envío y recepción de paquetes de datos entre 2 iPhones sin AR aún.
+  - Pantalla SwiftUI sencilla para conectar ambos dispositivos.
+
+ETAPA 2: ALINEACIÓN ESPACIAL Y COMPARTICIÓN DE ESCENA (Días 3-4)
+  - Integrar `isCollaborationEnabled` en `CaptureController.swift`.
+  - Transferir la topología inicial del Host al Colaborador.
+  - Probar que ambos teléfonos vean la misma maqueta 1:10 en el mismo lugar físico.
+
+ETAPA 3: MANIPULACIÓN CONCURRENTE ("METER MANO") (Días 5-6)
+  - Implementar el protocolo de mensajes de sincronización de racks y cables.
+  - Sistema de bloqueo transitorio (evitar que dos personas muevan lo mismo al milisegundo).
+  - Ver en vivo cómo el movimiento en el iPhone A se refleja en el iPhone B a 60 FPS.
+
+ETAPA 4: REFINAMIENTO DE PRESENCIA Y PULIDO UX (Días 7-8)
+  - Dibujar los punteros de los compañeros con `ARParticipantAnchor`.
+  - Integrar barra de estado colaborativa minimalista en el visor.
+  - Control de desconexión imprevista (si un iPhone se sale, la sesión continúa sin freeze).
+
+ETAPA 5: CONTROL DE CALIDAD Y PRUEBAS REALES (Día 9)
+  - Pruebas físicas en el laboratorio con 2 dispositivos reales (iPhone 16 Pro y otro iPhone compatible con LiDAR).
+  - Medición de consumo de batería, temperatura y fluidez en interacción continua.
+
+
+8. PREGUNTAS CLAVE PARA EL USUARIO (AFINACIÓN DEL PROYECTO)
+--------------------------------------------------------------------------------
+Para personalizar este plan al caso de uso exacto que tienes en mente para la UNSM,
+te planteo estas 4 preguntas clave:
+
+  1. ENTORNO FÍSICO:
+     ¿Los dos iPhones estarán siempre juntos en la misma habitación/aula física,
+     o te gustaría que en el futuro también puedan colaborar a distancia (cada uno
+     en su casa conectándose por Internet)?
+     -> En la misma sala usamos MultipeerConnectivity (100% offline, gratis y rápido).
+     -> A distancia requeriría un servidor en la nube (ej. WebSockets o Supabase/Cloudflare).
+
+  2. MODO DE VISOR:
+     ¿La sesión colaborativa se usará principalmente en:
+     a) Maqueta AR de mesa (escala 1:10, ideal para estudiar sobre un escritorio)?
+     b) Cuarto completo 1:1 (el laboratorio tamaño real escaneado con RoomPlan)?
+     c) Ambos modos según elija el usuario?
+
+  3. ROLES Y PRIVILEGIOS:
+     ¿Los dos iPhones deben tener exactamente los mismos poderes (edición libre
+     simultánea de cables, racks y configuraciones), o te interesa que haya un
+     modo "Profesor / Alumno" (donde el profesor pueda guiar o bloquear la edición)?
+
+  4. PERSISTENCIA DE LA SESIÓN:
+     Al terminar el trabajo en conjunto, ¿los cambios deben guardarse en el teléfono
+     del anfitrión solamente, o ambos deben poder exportar su propio archivo .nexus.json
+     con la topología terminada?
+
+================================================================================
+FIN DEL DOCUMENTO TÉCNICO
+================================================================================

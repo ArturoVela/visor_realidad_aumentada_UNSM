@@ -213,6 +213,7 @@ final class CaptureController {
             let configuration = ARWorldTrackingConfiguration()
             configuration.initialWorldMap = map
             if supportsMesh { configuration.sceneReconstruction = .mesh }
+            configuration.isCollaborationEnabled = true
             let session = ARSession()
             arSession?.pause()
             session.run(configuration, options: [.resetTracking, .removeExistingAnchors])

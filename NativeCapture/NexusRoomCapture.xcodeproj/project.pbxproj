@@ -26,6 +26,8 @@
 		A0000000000000000000001D /* LabCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001D /* LabCloud.swift */; };
 		A0000000000000000000001E /* LabCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001E /* LabCatalogView.swift */; };
 		A0000000000000000000001F /* Catalyst2960Inspection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000001F /* Catalyst2960Inspection.swift */; };
+		A00000000000000000000020 /* LabCollaboration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000020 /* LabCollaboration.swift */; };
+		A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* CollaborativeSessionView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		B0000000000000000000001D /* LabCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabCloud.swift; sourceTree = "<group>"; };
 		B0000000000000000000001E /* LabCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabCatalogView.swift; sourceTree = "<group>"; };
 		B0000000000000000000001F /* Catalyst2960Inspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalyst2960Inspection.swift; sourceTree = "<group>"; };
+		B00000000000000000000020 /* LabCollaboration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabCollaboration.swift; sourceTree = "<group>"; };
+		B00000000000000000000021 /* CollaborativeSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollaborativeSessionView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +96,8 @@
 				B0000000000000000000001D /* LabCloud.swift */,
 				B0000000000000000000001C /* LabPublication.swift */,
 				B0000000000000000000001F /* Catalyst2960Inspection.swift */,
+				B00000000000000000000020 /* LabCollaboration.swift */,
+				B00000000000000000000021 /* CollaborativeSessionView.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -192,6 +198,8 @@
 				A0000000000000000000001D /* LabCloud.swift in Sources */,
 				A0000000000000000000001C /* LabPublication.swift in Sources */,
 				A0000000000000000000001F /* Catalyst2960Inspection.swift in Sources */,
+				A00000000000000000000020 /* LabCollaboration.swift in Sources */,
+				A00000000000000000000021 /* CollaborativeSessionView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -244,6 +252,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara para leer etiquetas QR del laboratorio y, con LiDAR, medir el espacio y colocar el modelo virtual.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Nexus AR usa la red local y Bluetooth para conectar dos iPhones en una sesión de trabajo AR en tiempo real.";
+				INFOPLIST_KEY_NSBonjourServices = (
+					"_nexus-collab._tcp",
+					"_nexus-collab._udp",
+				);
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -275,6 +288,11 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nexus AR";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Usamos la cámara para leer etiquetas QR del laboratorio y, con LiDAR, medir el espacio y colocar el modelo virtual.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Usamos el movimiento del iPhone para mirar alrededor del laboratorio en el modo VR.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Nexus AR usa la red local y Bluetooth para conectar dos iPhones en una sesión de trabajo AR en tiempo real.";
+				INFOPLIST_KEY_NSBonjourServices = (
+					"_nexus-collab._tcp",
+					"_nexus-collab._udp",
+				);
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

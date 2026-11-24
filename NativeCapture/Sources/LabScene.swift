@@ -123,6 +123,7 @@ struct LabSceneView: UIViewRepresentable {
     var onAssemblyPort: (LabTopology.Port) -> Void = { _ in }
     var onPowerOutlet: (LabARAssembly.Item, LabRackPower.Outlet?) -> Void = { _, _ in }
     var onEquipmentTarget: (LabEquipmentTarget?) -> Void = { _ in }
+    var peerSession: NexusPeerSession? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     private var isTierAR: Bool { mode == .ar && layout.facility != nil }
@@ -165,6 +166,7 @@ struct LabSceneView: UIViewRepresentable {
         tap.cancelsTouchesInView = false
         view.addGestureRecognizer(tap)
         context.coordinator.installWaypointGesture(in: view, tap: tap)
+        context.coordinator.setupPeerSession(peerSession)
         return view
     }
 
@@ -172,6 +174,7 @@ struct LabSceneView: UIViewRepresentable {
         let topologyChanged = context.coordinator.parent.topologyRevision != topologyRevision
         let placementChanged = context.coordinator.parent.placementRevision != placementRevision
         context.coordinator.parent = self
+        context.coordinator.setupPeerSession(peerSession)
         if isTierAR {
             let scale = usesCompactTierOverview ? 1 : view.traitCollection.displayScale
             if scale > 0, view.contentScaleFactor != scale { view.contentScaleFactor = scale }
@@ -1321,15 +1324,29 @@ struct LabSceneView: UIViewRepresentable {
                     let size = device.visualSize
                     let name = device.providesDHCP && !device.name.localizedCaseInsensitiveContains("dhcp")
                         ? device.name + " · DHCP" : device.name
-                    let badge = try label(String(name.prefix(38)), width: min(device.providesDHCP ? 0.28 : 0.19, size.x - 0.012),
-                                          height: device.providesDHCP ? 0.021 : 0.016)
-                    badge.position = SIMD3(0, size.y / 2 - 0.010, -size.z / 2 - 0.013)
-                    model.addChild(badge)
-                    if parent.layout.importedRoom && device.providesDHCP {
-                        let rear = badge.clone(recursive: false)
-                        rear.position.z = size.z / 2 + 0.013
-                        rear.orientation = simd_quatf()
-                        model.addChild(rear)
+                    let width = min(device.providesDHCP ? 0.28 : 0.19, size.x - 0.012)
+                    let height: Float = device.providesDHCP ? 0.021 : 0.016
+                    let title = String(name.prefix(38))
+                    let hasRearLabel = parent.layout.importedRoom && device.providesDHCP
+                    if placement.kind == .rack {
+                        // Keep the name on the lid, behind both connector faces.
+                        let inset = min(0.022, size.z / 4)
+                        model.addChild(try topLabel(title, width: width, depth: height,
+                                                   at: SIMD3(0, size.y / 2, -size.z / 2 + inset)))
+                        if hasRearLabel {
+                            model.addChild(try topLabel(title, width: width, depth: height,
+                                                       at: SIMD3(0, size.y / 2, size.z / 2 - inset), facing: .rear))
+                        }
+                    } else {
+                        let badge = try label(title, width: width, height: height)
+                        badge.position = SIMD3(0, size.y / 2 - 0.010, -size.z / 2 - 0.013)
+                        model.addChild(badge)
+                        if hasRearLabel {
+                            let rear = badge.clone(recursive: false)
+                            rear.position.z = size.z / 2 + 0.013
+                            rear.orientation = simd_quatf()
+                            model.addChild(rear)
+                        }
                     }
                 }
                 if placement.kind == .rack {
@@ -1686,10 +1703,11 @@ struct LabSceneView: UIViewRepresentable {
 
         private func addRackTitle(to entity: Entity, placement: LabPlacement) throws {
             let capacity = RackMount.capacity(height: placement.size.y)
-            let title = try label("\(placement.title) · \(capacity) U", width: placement.size.x - 0.12, height: 0.035)
+            let width = placement.size.x - 0.12
+            let title = try label("\(placement.title) · \(capacity) U", width: width, height: 0.030)
             if capacity == 42 { title.name = "hardware:rack-r42612" }
-            title.position = SIMD3(0, placement.size.y - 0.026, -placement.size.z / 2 - 0.002)
-            title.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: SIMD3(placement.size.x - 0.1, 0.04, 0.01))]))
+            title.position = SIMD3(0, placement.size.y - 0.021, -placement.size.z / 2 - 0.001)
+            title.components.set(CollisionComponent(shapes: [ShapeResource.generateBox(size: SIMD3(width, 0.030, 0.004))]))
             entity.addChild(title)
         }
 
@@ -2441,19 +2459,17 @@ struct LabSceneView: UIViewRepresentable {
                 (index == 4 ? group : appearance).addChild(model)
             }
             try addHardwareSelection(to: group, id: id)
-            let size = hardwareSize(id), w = size.x, h = size.y, front = -size.z / 2 - 0.002
+            let size = hardwareSize(id), w = size.x, top = size.y / 2, front = -size.z / 2
             let networkChassis = id.hasPrefix("switch-") || id.hasPrefix("router-")
             let rackDevice = RackMount.units(id) == 2 || networkChassis || id.hasPrefix("patch-") || id.hasPrefix("server-")
             if networkChassis && !compact {
                 let name = id.hasPrefix("switch-") ? "CATALYST " + String(id.suffix(4)) : "ISR " + String(id.suffix(4))
-                let identity = try label(name, width: 0.084, height: 0.006)
-                identity.position = SIMD3(-w / 2 + 0.053, h / 2 - 0.004, front - 0.003)
-                appearance.addChild(identity)
+                appearance.addChild(try topLabel(name, width: 0.084, depth: 0.010,
+                                                 at: SIMD3(-w / 2 + 0.053, top, front + 0.045)))
             }
             if !compact, rackDevice, parent.topology == nil, let item = HardwareCatalog.item(id) {
-                let plate = try label(item.name, width: min(w * 0.25, 0.09), height: 0.009)
-                plate.position = SIMD3(id.hasPrefix("switch-") ? w * 0.20 : w * 0.27, h * 0.31, front - 0.007)
-                appearance.addChild(plate)
+                appearance.addChild(try topLabel(item.name, width: min(w * 0.25, 0.09), depth: 0.012,
+                                                 at: SIMD3(w * 0.24, top, front + 0.024)))
             }
             hardwareTemplates[templateID] = group
             return group.clone(recursive: true)
@@ -2478,6 +2494,17 @@ struct LabSceneView: UIViewRepresentable {
             let highlight = try rim.model(material: materials.accent)
             highlight.name = "hardware-selection"; highlight.isEnabled = false
             group.addChild(highlight)
+        }
+
+        private func topLabel(_ text: String, width: Float, depth: Float, at surface: SIMD3<Float>,
+                              facing face: RackMount.CableFace = .front) throws -> ModelEntity {
+            let plate = try label(text, width: width, height: depth)
+            plate.position = surface + SIMD3(0, 0.0002, 0)
+            plate.orientation = simd_quatf(angle: -.pi / 2, axis: SIMD3(1, 0, 0))
+            if face == .front {
+                plate.orientation = simd_quatf(angle: .pi, axis: SIMD3(0, 1, 0)) * plate.orientation
+            }
+            return plate
         }
 
         private func label(_ text: String, width: Float, height: Float) throws -> ModelEntity {
@@ -3415,11 +3442,28 @@ struct LabSceneView: UIViewRepresentable {
                 parent.onEquipmentTarget(equipmentTarget(surface, at: point, in: view))
                 return
             }
-            if parent.mode == .room, parent.selectableScenePorts != nil {
+            if parent.selectableScenePorts != nil || parent.assemblyPortSource != nil {
                 if !parent.assemblyPortsEnabled { return }
-                if let port = assemblyPort(at: point, in: view) { parent.onAssemblyPort(port) }
-                else if case .device(let id) = target(at: point, preferPortDevice: true)?.item { parent.onAssemblySelect(.device(id)) }
+                if let port = assemblyPort(at: point, in: view) {
+                    parent.onAssemblyPort(port)
+                    return
+                }
+                if case .device(let id) = target(at: point, preferPortDevice: true)?.item {
+                    parent.onAssemblySelect(.device(id))
+                    return
+                }
                 return
+            }
+            if let port = assemblyPort(at: point, in: view) {
+                if let _ = parent.topology?.link(at: port) {
+                    if parent.assemblyEditID == nil, parent.assemblyRackID == nil, let inspect = parent.onInspectPort {
+                        inspect(port)
+                        return
+                    }
+                } else if parent.assemblyPortsEnabled {
+                    parent.onAssemblyPort(port)
+                    return
+                }
             }
             if let rack = parent.powerOutletRack {
                 guard !awaitingPlacement, parent.walkthrough?.ready == true else { return }
@@ -3460,6 +3504,21 @@ struct LabSceneView: UIViewRepresentable {
             }
             if inspectPDU(at: point, in: view) { return }
             let target = target(at: point, preferPortDevice: true)
+            if let peerSession = parent.peerSession {
+                var targetID: String? = nil
+                switch target?.item {
+                case .device(let id), .hardware(let id), .placement(let id), .link(let id):
+                    targetID = id
+                case nil: break
+                }
+                if let targetID, peerSession.isLockedByPeer(targetID) {
+                    let holder = peerSession.lockHolder(for: targetID) ?? "el otro usuario"
+                    peerSession.lastActionAlert = "⚠️ Elemento en uso por \(holder)."
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.warning)
+                    return
+                }
+            }
             parent.selection = nil
             if selectedHardwareHighlight !== highlightedDevice { selectedHardwareHighlight?.isEnabled = false }
             if let highlight = target?.highlight {
@@ -4260,6 +4319,114 @@ struct LabSceneView: UIViewRepresentable {
         nonisolated func session(_ session: ARSession, didFailWithError error: any Error) {
             let message = "AR: " + error.localizedDescription
             MainActor.assumeIsolated { suspend(.failed(message)) }
+        }
+
+        private weak var attachedPeerSession: NexusPeerSession?
+        private var participantEntities: [UUID: Entity] = [:]
+
+        func setupPeerSession(_ session: NexusPeerSession?) {
+            guard let session else {
+                attachedPeerSession = nil
+                return
+            }
+            guard session !== attachedPeerSession else { return }
+            attachedPeerSession = session
+
+            session.onMessageReceived = { [weak self] message in
+                guard let self else { return }
+                switch message {
+                case .movePlacement(let id, let x, let y, let z, let yaw):
+                    self.applyPeerPlacementMove(id: id, x: x, y: y, z: z, yaw: yaw)
+                case .alignMarker(let matrix):
+                    self.applyMarkerAlignment(matrix)
+                default: break
+                }
+            }
+
+            session.onCollaborationDataReceived = { [weak self] data in
+                guard let self, let arSession = self.parent.arSession else { return }
+                arSession.update(with: data)
+            }
+        }
+
+        func applyPeerPlacementMove(id: String, x: Float, y: Float, z: Float, yaw: Float) {
+            guard let model = placementModels[id] else { return }
+            var targetTransform = model.transform
+            targetTransform.translation = SIMD3<Float>(x, y, z)
+            targetTransform.rotation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+            model.move(to: targetTransform, relativeTo: model.parent, duration: 0.05, timingFunction: .easeInOut)
+        }
+
+        func applyMarkerAlignment(_ matrix: [Float]) {
+            guard matrix.count == 16, let root = rootAnchor else { return }
+            let col0 = SIMD4<Float>(matrix[0], matrix[1], matrix[2], matrix[3])
+            let col1 = SIMD4<Float>(matrix[4], matrix[5], matrix[6], matrix[7])
+            let col2 = SIMD4<Float>(matrix[8], matrix[9], matrix[10], matrix[11])
+            let col3 = SIMD4<Float>(matrix[12], matrix[13], matrix[14], matrix[15])
+            let simdMatrix = simd_float4x4(columns: (col0, col1, col2, col3))
+            root.transform = Transform(matrix: simdMatrix)
+            parent.walkthrough?.placementConfirmed = true
+        }
+
+        func syncMarkerTransformToPeer() {
+            guard let root = rootAnchor, let session = attachedPeerSession else { return }
+            let cols = root.transform.matrix.columns
+            let floatArray: [Float] = [
+                cols.0.x, cols.0.y, cols.0.z, cols.0.w,
+                cols.1.x, cols.1.y, cols.1.z, cols.1.w,
+                cols.2.x, cols.2.y, cols.2.z, cols.2.w,
+                cols.3.x, cols.3.y, cols.3.z, cols.3.w
+            ]
+            session.sendReliable(.alignMarker(transform: floatArray))
+        }
+
+        private func updateParticipantAnchor(_ anchor: ARParticipantAnchor) {
+            guard let root = rootAnchor else { return }
+            let sphere: Entity
+            if let existing = participantEntities[anchor.identifier] {
+                sphere = existing
+            } else {
+                let meshEntity = ModelEntity(
+                    mesh: .generateSphere(radius: 0.05),
+                    materials: [SimpleMaterial(color: UIColor.systemCyan.withAlphaComponent(0.85), isMetallic: false)]
+                )
+                let pointer = ModelEntity(
+                    mesh: .generateBox(size: [0.02, 0.02, 0.10]),
+                    materials: [SimpleMaterial(color: UIColor.systemBlue, isMetallic: false)]
+                )
+                pointer.position = [0, 0, -0.06]
+                meshEntity.addChild(pointer)
+                root.addChild(meshEntity)
+                participantEntities[anchor.identifier] = meshEntity
+                sphere = meshEntity
+            }
+            sphere.transform = Transform(matrix: anchor.transform)
+        }
+
+        nonisolated func session(_ session: ARSession, didOutputCollaborationData data: ARSession.CollaborationData) {
+            MainActor.assumeIsolated {
+                self.attachedPeerSession?.sendARCollaborationData(data)
+            }
+        }
+
+        nonisolated func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+            MainActor.assumeIsolated {
+                for anchor in anchors {
+                    if let participant = anchor as? ARParticipantAnchor {
+                        self.updateParticipantAnchor(participant)
+                    }
+                }
+            }
+        }
+
+        nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+            MainActor.assumeIsolated {
+                for anchor in anchors {
+                    if let participant = anchor as? ARParticipantAnchor {
+                        self.updateParticipantAnchor(participant)
+                    }
+                }
+            }
         }
     }
 }

@@ -25,6 +25,8 @@ Tools/PacketTracerExporter/build/
 # Cachés y resultados locales de Wrangler y Graphify.
 /.wrangler/
 /graphify-out/
+/.build/
+/output/
 
 # Python y configuración privada local.
 **/__pycache__/

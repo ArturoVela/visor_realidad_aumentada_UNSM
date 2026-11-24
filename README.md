@@ -60,6 +60,9 @@ cubre montaje, VLAN, servicios y automatizaciones.
 | Colocar una maqueta | Demo e importaciones ofrecen AR 1:10: apunta a una superficie y toca para colocarla. |
 | Inspeccionar la red | Consulta equipos, puertos, extremos, IPv4, VLAN y configuración importada disponible. |
 | Seguir un cable | Apunta a un cable o puerto y pulsa **¿Adónde va?**. El visor resalta el recorrido y muestra equipo, puerto y rack de ambos extremos. |
+| Ver viajar un paquete | Cada ping muestra un paquete luminoso con una estela que recorre los cables equipo por equipo. Sobre cada equipo aparece una etiqueta flotante numerada (Origen, 1, 2… Destino). El paquete vuelve en verde como respuesta o se pone rojo donde la red falla. |
+| Hablar con el laboratorio | Pulsa 🎙️ y pregunta en voz alta: «¿La PC 1 llega al servidor?», «¿Dónde está el firewall?», «Apaga el switch de acceso». **Nexus** responde con voz y actúa en la escena: lanza el paquete, lleva la cámara al equipo o lo apaga. Usa la IA de Apple en el iPhone (sin internet) y, si no está disponible, un intérprete de comandos en español. |
+| Modo feria | Envía paquetes entre equipos al azar y juega el reto **Encuentra la falla**: un equipo se apaga y el visitante tiene 60 segundos para tocarlo. Guarda un ranking local de los cinco mejores tiempos. |
 | Recorrer en primera persona | Camina en 3D con el control de movimiento. Modo VR en el teléfono vertical u horizontal, con vista estereoscópica opcional en horizontal. |
 | Importar Packet Tracer | Envía un .pkt desde Finder al iPhone emparejado o importa un .nexus.json desde Archivos. |
 | Recuperar tu trabajo | Guarda datos localmente y restaura el laboratorio activo en 3D al abrir la app. |
@@ -168,6 +171,36 @@ Unity no es necesario para ejecutar la app iPhone y no renderiza su vista móvil
 2. Escanea desde la plantilla o elige **Cuarto y archivos → Aplicar plantilla al cuarto** si ya tienes un escaneo. Se necesita un área libre de 14,6 × 10,8 m con margen a paredes, 3,1 m de altura y una abertura reconocida hacia operación. La app preserva las dimensiones del equipo y mantiene el escaneo si la plantilla no cabe.
 3. En el cuarto aplicado, **Recorrer en AR** conserva las paredes y el suelo reconstruidos en tono gris. Desde la sala virtual sigue disponible **Maqueta AR 1:10** para visualizar el conjunto a pequeña escala.
 
+### Nexus → hablar con el laboratorio
+
+1. En **Cuarto 3D**, pulsa el botón de onda (🎙️) de la barra inferior o el mismo icono en el panel del modo feria.
+2. Toca el micrófono y pregunta. Nexus deja de escuchar solo cuando haces una pausa. Mientras hablas, el panel
+   muestra lo que entendió.
+3. Nexus responde en voz alta y en texto, y la escena reacciona:
+   - «¿La PC 1 llega al Servidor A.1?» → lanza el paquete animado y explica si llega o dónde se corta.
+   - «¿Dónde está el firewall?» → lleva la cámara al equipo.
+   - «Apaga el switch de acceso» / «Enciéndelo» → simula la falla y cuenta qué conexiones se pierden.
+   - «¿Qué hace el DNS A?», «¿Cómo está la red?», «Empieza el reto».
+4. Si hay ruido, escribe la pregunta o toca una de las sugerencias, que se crean con los equipos reales del laboratorio.
+
+En iPhone con Apple Intelligence activo (iOS 26 o posterior), Nexus conversa con el modelo de lenguaje de Apple,
+que corre en el propio iPhone y usa herramientas de la app (`buscarEquipo`, `probarConexion`, `mostrarEquipo`,
+`cambiarEnergia`, `estadoDeLaRed`) para no inventar datos. En otros iPhone, o con el botón ✨ del panel desactivado,
+responde con un intérprete de comandos en español. El reconocimiento de voz usa el modo en el dispositivo cuando el
+idioma lo permite.
+
+### Modo feria → demostración para el público
+
+1. Abre la **Plantilla Tier IV** o el **HomeLab** en **Cuarto 3D** y pulsa el botón ✨ de la barra inferior.
+2. Se envía un paquete entre dos equipos al azar. El panel muestra cada parada mientras el paquete
+   recorre los cables. Pulsa **Enviar un paquete** para repetirlo con otra ruta.
+3. Pulsa **Reto: encuentra la falla**. La app apaga un equipo cuya caída corta la ruta y el paquete se
+   pone rojo donde ya no puede seguir. El visitante toca el equipo, su rack o un cable que llegue a él.
+4. Al acertar o al agotarse los 60 segundos, el equipo se repara y el paquete vuelve a llegar.
+   Los tiempos se guardan en el iPhone y se ven con el botón 🏆.
+
+Para que lo vea más gente, duplica la pantalla del iPhone en un televisor con AirPlay.
+
 ### Packet Tracer → laboratorio importado
 
 Con la [acción de Finder configurada](Tools/PacketTracerExporter/README-Mac.md), haz clic derecho
@@ -223,7 +256,7 @@ como `Server-PT`, `PC-PT` y `Laptop-PT`, tienen formas ilustrativas para su tipo
 
 ## Comprobaciones reproducibles
 
-Desde la raíz del repositorio, ejecuta los cuatro checks Swift:
+Desde la raíz del repositorio, ejecuta los seis checks Swift:
 
 ```sh
 cd NativeCapture
@@ -238,6 +271,12 @@ xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/L
 
 xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/LabImport.swift Tests/LabImportCheck.swift -o /tmp/nexus-import-check
 /tmp/nexus-import-check
+
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/FairMode.swift Tests/LabFairCheck.swift -o /tmp/nexus-fair-check
+/tmp/nexus-fair-check
+
+xcrun swiftc Sources/RoomStructure.swift Sources/HardwareCatalog.swift Sources/LabLayout.swift Sources/LabTopology.swift Sources/LabARAssembly.swift Sources/FairMode.swift Sources/LabAssistant.swift Tests/LabAssistantCheck.swift -o /tmp/nexus-assistant-check
+/tmp/nexus-assistant-check
 ```
 
 Para comprobar el exportador después de preparar su entorno, desde la raíz:
